@@ -14,3 +14,6 @@
 [submodule "3rdparty/cutlass"]
 	path = 3rdparty/cutlass
 	url = https://github.com/NVIDIA/cutlass.git
+[submodule "examples/utils/transformers"]
+	path = examples/utils/transformers
+	url = https://github.com/huggingface/transformers.git

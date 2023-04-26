@@ -1,0 +1,2 @@
+datasets[audio]~=2.11.0
+transformers~=4.28.1
