@@ -9,6 +9,7 @@ __pycache__/
 .cache
 *.npy
 *.pth
+*.pt
 !tests/data/**/*.npy
 /models
 /notebooks
