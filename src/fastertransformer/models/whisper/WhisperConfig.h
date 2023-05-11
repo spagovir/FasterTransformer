@@ -1,4 +1,8 @@
+#include <stddef.h>
+namespace fastertransformer
+{
 struct WhisperConfig { 
+    size_t batch_size;
     size_t vocab_size;
     size_t num_mel_bins;
     size_t encoder_layers;
@@ -9,8 +13,10 @@ struct WhisperConfig {
     size_t decoder_ffn_dim;
     size_t max_source_positions;
     size_t max_target_positions;
+    size_t d_model;
     WhisperConfig() 
-    : vocab_size(51865)
+    : batch_size(1)
+    , vocab_size(51865)
     , num_mel_bins(80)
     , encoder_layers(6)
     , encoder_attention_heads(4)
@@ -20,6 +26,8 @@ struct WhisperConfig {
     , encoder_ffn_dim(1536)
     , max_source_positions(1500)
     , max_target_positions(2048)
+    , d_model(384)
     {}
-}
+;   }
+; }
 
