@@ -1,0 +1,8 @@
+{
+	"name" : "nvidia-docker",
+	"image" : "nvcr.io/nvidia/pytorch:23.04-py3",
+	"containerUser": "root",
+	// "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+	// "workspaceFolder": "/workspace",
+	"runArgs": ["-it", "--shm-size=5g", "--gpus=all"]
+}
