@@ -1,8 +1,10 @@
+#pragma once
+
 #include "src/fastertransformer/kernels/layernorm_kernels.h"
 #include "src/fastertransformer/layers/attention_layers/AttentionWeight.h"
 #include "src/fastertransformer/layers/FfnWeight.h"
-using namespace fastertransformer;
 
+namespace fastertransformer {
 template <typename T>
 struct WhisperEncoderLayerWeight {
     LayerNormWeight<T> layernorm1; 
@@ -10,3 +12,4 @@ struct WhisperEncoderLayerWeight {
     LayerNormWeight<T> layernorm2; 
     FfnWeight<T> ffn;
 };
+}

@@ -8,6 +8,8 @@ from datasets import load_dataset
 processor = AutoProcessor.from_pretrained("openai/whisper-tiny.en")
 model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-tiny.en")
 
+
+
 ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
 
 inputs = processor(ds[0]["audio"]["array"], return_tensors="pt")

@@ -23,6 +23,7 @@
 #include <cublas_v2.h>
 #include <cuda_fp16.h>
 #include <cudnn.h>
+#include <cudnn_ops_infer.h>
 
 namespace fastertransformer {
 
@@ -70,7 +71,7 @@ void conv1d(T*             output,
 
     checkCUDNN(cudnnCreateTensorDescriptor(&input_descriptor_));
     checkCUDNN(cudnnSetTensor4dDescriptor(input_descriptor_,
-                                          /*format=*/CUDNN_TENSOR_NCHW,
+                                          /*format=*/CUDNN_TENSOR_NHWC,
                                           /*dataType=*/dataType,
                                           /*batch_size=*/batch,
                                           /*channels=*/in_channels,
@@ -99,7 +100,7 @@ void conv1d(T*             output,
     checkCUDNN(cudnnSetConvolution2dDescriptor(convolution_descriptor_,
                                                /*pad_height=*/0,
                                                /*pad_width=*/1,
-                                               /*vertical_stride=*/stride,
+                                               /*vertical_stride=*/ 1,
                                                /*horizontal_stride=*/stride,
                                                /*dilation_height=*/1,
                                                /*dilation_width=*/1,
@@ -128,7 +129,7 @@ void conv1d(T*             output,
                                        &beta,
                                        output_descriptor_,
                                        output));
-
+    sync_check_cuda_error();
     checkCUDNN(cudnnDestroyTensorDescriptor(input_descriptor_));
     checkCUDNN(cudnnDestroyTensorDescriptor(output_descriptor_));
     checkCUDNN(cudnnDestroyFilterDescriptor(kernel_descriptor_));

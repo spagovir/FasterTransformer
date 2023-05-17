@@ -1,71 +1,78 @@
 #include "src/fastertransformer/models/whisper/WhisperEncoder.h"
+#include "src/fastertransformer/layers/BaseLayer.h"
 #include "src/fastertransformer/utils/allocator.h"
 #include "src/fastertransformer/utils/Tensor.h"
 #include "src/fastertransformer/utils/cuda_utils.h"
 #include <cstddef>
+#include <memory>
 #include <type_traits>
 
 namespace fastertransformer
-{   template<typename T, AllocatorType AT>
-    WhisperEncoder<T,AT>::WhisperEncoder
-    ( WhisperCudaContext<AT>    &context
+{   template<typename T>
+    WhisperEncoder<T>::WhisperEncoder
+    ( WhisperCudaContext        *context
     , bool                      is_free_buffer_after_forward
     , WhisperConfig             config
     )
-    :   context_(context)
-    ,   is_free_buffer_after_forward_(is_free_buffer_after_forward)
+    :   BaseLayer
+        (   context->stream_
+        ,   context->cublas_wrapper
+        ,   context->iallocator
+        ,   is_free_buffer_after_forward)
+    ,   context_(context)
     ,   buffers_allocated_(false)
     ,   config_(config)
+
+    ,   conv1(Conv1dLayer<T>
+        (   context->stream_
+        ,   context->cublas_wrapper
+        ,   context->iallocator
+        ,   1 
+        ,   1
+        ,   3
+        ,   context->cudnn_handle ))
+    ,   conv2(Conv1dLayer<T>
+        (   context->stream_
+        ,   context->cublas_wrapper
+        ,   context->iallocator
+        ,   2 //2
+        ,   1
+        ,   3
+        ,   context_->cudnn_handle))
     {   if(! is_free_buffer_after_forward) allocateBuffer()
-    ;   conv1 = Conv1dLayer<T>
-        (   context_.stream
-        ,   context_.cublas_wrapper
-        ,   context_.iallocator
-        ,   1
-        ,   1
-        ,   3
-        ,   context_.cudnn_handle )
-    ;   conv2 = Conv1dLayer<T>
-        (   context_.stream
-        ,   context_.cublas_wrapper
-        ,   context_.iallocator
-        ,   2
-        ,   1
-        ,   3
-        ,   context_.cudnn_handle)
     ;} 
     
-    template<typename T, AllocatorType AT>
-        void WhisperEncoder<T,AT>::allocateBuffer() {
+    template<typename T>
+        void WhisperEncoder<T>::allocateBuffer() {
             allocateBuffer(config_.batch_size, config_.max_source_positions);
         } ;
-    template<typename T, AllocatorType AT>
-    void WhisperEncoder<T,AT>::allocateBuffer(size_t batch, size_t in_seq)
+    template<typename T>
+    void WhisperEncoder<T>::allocateBuffer(size_t batch, size_t in_seq)
     {   conv1_out_buffer = 
-            (T*) context_.iallocator.malloc
+            (T*) context_->iallocator->malloc
                 (   sizeof(T) 
-                *   in_seq
+                *   in_seq 
                 *   batch
                 *   config_.d_model)
     ;   conv2_out_buffer = 
-            (T*) context_.iallocator->malloc
+            (T*) context_->iallocator->malloc
             (   sizeof(T)
-            *   (in_seq + 1)/2
+            *   ((in_seq + 1)/2)
             *   batch
             *   config_.d_model
             )
     ;   buffers_allocated_ = true
     ;   }
-;   template<typename T, AllocatorType AT>
-    void WhisperEncoder<T,AT>::freeBuffer()
-    {   context_.iallocator.free(conv1_out_buffer)
-    ;   context_.iallocator.free(conv2_out_buffer)
+;   template<typename T>
+    void WhisperEncoder<T>::freeBuffer()
+    {   context_->iallocator->free((void**) &conv1_out_buffer)
+    ;   context_->iallocator->free((void**) &conv2_out_buffer)
     ;   conv1_out_buffer = nullptr
     ;   conv2_out_buffer = nullptr
     ;   buffers_allocated_ = false
     ;   }
-;   template<typename T, AllocatorType AT>
-    void WhisperEncoder<T,AT>::forward
+;   template<typename T>
+    void WhisperEncoder<T>::forward
     (   TensorMap   &input_tensors
     ,   TensorMap   &output_tensors
     ,   WhisperEncoderWeight<T> weight)
@@ -92,29 +99,40 @@ namespace fastertransformer
             ,   getTensorType<T>()
             ,   {batch, seq, config.d_model}
             ,   conv1_out_buffer)
+    ;   cudaDeviceSynchronize()
     ;   conv1.forward
-        (   in_tensor.getPtr<T>()
+        (   in_tensor
         ,   conv1_out_tensor
         ,   weight.conv1)
+    ;   cudaDeviceSynchronize()
     ;   Tensor conv2_out_tensor = Tensor
         (   MEMORY_GPU
         ,   getTensorType<T>()
-        ,   {batch, (seq + 1)/2, config.d_model}
+        ,   {batch, (seq+1)/2, config.d_model} //(seq+1)/2
         ,   conv2_out_buffer
         )
     ;   conv2.forward
         (   conv1_out_tensor
-        ,   conv2_out_tensor
+        ,   out_tensor // conv2_out_tensor
         ,   weight.conv2)
-    ;   memcpy
+    /*;   memcpy
         (   out_tensor.getPtr<void>()
         ,   conv2_out_tensor.getPtr<void>()
         ,   conv2_out_tensor.sizeBytes())
+        */
+    ;   cudaStreamSynchronize(context_->stream_)
     ;   if(is_free_buffer_after_forward_)   freeBuffer()
+    ;   cudaDeviceSynchronize()
     ;   }
-    template<typename T, AllocatorType AT>
-    WhisperEncoder<T,AT>::~WhisperEncoder<T, AT>()
+    template<typename T> 
+    std::vector<size_t> WhisperEncoder<T>::out_size(size_t batch, size_t seq)
+    {   return {batch, (seq+1)/2, config.d_model};} //(seq+1)/2
+
+    template<typename T>
+    WhisperEncoder<T>::~WhisperEncoder()
     {   if(buffers_allocated_)  freeBuffer()
     ;   
     }
+;   template class WhisperEncoder<float>
 ;   }
+

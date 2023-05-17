@@ -2,7 +2,19 @@
 	"name" : "nvidia-docker",
 	"image" : "nvcr.io/nvidia/pytorch:23.04-py3",
 	"containerUser": "root",
+	"postCreateCommand": "pip install transformers",
 	// "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
 	// "workspaceFolder": "/workspace",
-	"runArgs": ["-it", "--shm-size=5g", "--gpus=all"]
+	"runArgs": [
+		"-it",
+		"--shm-size=5g",
+		"--gpus=all"
+	],
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"llvm-vs-code-extensions.vscode-clangd"
+			]
+		}
+	}
 }

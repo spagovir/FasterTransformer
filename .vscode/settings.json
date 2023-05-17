@@ -69,5 +69,8 @@
         "cfenv": "cpp",
         "typeindex": "cpp",
         "clangd.path": "./root/.vscode-server/data/User/globalStorage/llvm-vs-code-extensions.vscode-clangd/install/16.0.2/clangd_16.0.2/bin/clangd"
-    }
+    },
+    "clangd.arguments": [
+        "--enable-config"
+    ]
 }

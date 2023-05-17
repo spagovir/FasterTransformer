@@ -15,7 +15,7 @@ namespace fastertransformer
     ;   size_t in_chan  = input_tensor.shape[2]
     ;   FT_CHECK(batch == output_tensor.shape[0])
     ;   size_t out_width = output_tensor.shape[1]
-    ;   FT_CHECK(out_width = (in_width + padding * 2 + 1 - kernel_size) / stride)
+    ;   FT_CHECK(out_width = (in_width + padding * 2 + stride - kernel_size) / stride)
     ;   size_t out_chan = output_tensor.shape[2]
     ;   conv1d
         (   output_tensor.getPtr<T2>()
@@ -35,13 +35,15 @@ namespace fastertransformer
         ,   weights.bias
         ,   nullptr
         ,   nullptr
-        ,   nullptr
         ,   batch * out_width
         ,   out_chan
-        ,   stream_)
+        ,   stream_) 
     ;   }
     ;   template<typename T1,typename T2>
         void Conv1dLayer<T1,T2>::allocateBuffer() {}
     ;   template<typename T1,typename T2>
         void Conv1dLayer<T1,T2>::freeBuffer() {}
+    ;   template class Conv1dLayer<float>
+    ;
 } ;
+

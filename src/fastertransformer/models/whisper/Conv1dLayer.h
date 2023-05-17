@@ -1,3 +1,4 @@
+#pragma once
 #include "src/fastertransformer/layers/DenseWeight.h"
 #include "src/fastertransformer/layers/BaseLayer.h"
 #include "cudnn.h"

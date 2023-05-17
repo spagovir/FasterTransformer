@@ -1,4 +1,6 @@
 CompileFlags:   
     Add:
-        - --cuda-path=/usr/local/cuda-11.8/targets/x86_64-linux/
-        - -I/usr/local/cuda-11.8/targets/x86_64-linux/include
+        - --cuda-path=/usr/local/cuda-12.1/targets/x86_64-linux/
+        - -I/usr/local/cuda-12.1/targets/x86_64-linux/include
+        - -I/usr/local/lib/python3.8/dist-packages/torch/include/
+        - -I/usr/local/lib/python3.8/dist-packages/torch/include/torch/csrc/api/include/
