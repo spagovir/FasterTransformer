@@ -3,6 +3,7 @@
 #include "src/fastertransformer/utils/allocator.h"
 #include "src/fastertransformer/utils/Tensor.h"
 #include "src/fastertransformer/utils/cuda_utils.h"
+#include "src/fastertransformer/models/whisper/WhisperKernels.h"
 #include <cstddef>
 #include <memory>
 #include <type_traits>
@@ -99,12 +100,10 @@ namespace fastertransformer
             ,   getTensorType<T>()
             ,   {batch, seq, config.d_model}
             ,   conv1_out_buffer)
-    ;   cudaDeviceSynchronize()
     ;   conv1.forward
         (   in_tensor
         ,   conv1_out_tensor
         ,   weight.conv1)
-    ;   cudaDeviceSynchronize()
     ;   Tensor conv2_out_tensor = Tensor
         (   MEMORY_GPU
         ,   getTensorType<T>()
@@ -113,16 +112,15 @@ namespace fastertransformer
         )
     ;   conv2.forward
         (   conv1_out_tensor
-        ,   out_tensor // conv2_out_tensor
+        ,   conv2_out_tensor
         ,   weight.conv2)
-    /*;   memcpy
+    ;   invokeEmbedSinusoid(conv2_out_tensor, context_->stream_)   
+    ;   cudaMemcpy
         (   out_tensor.getPtr<void>()
         ,   conv2_out_tensor.getPtr<void>()
-        ,   conv2_out_tensor.sizeBytes())
-        */
-    ;   cudaStreamSynchronize(context_->stream_)
+        ,   conv2_out_tensor.sizeBytes()
+        ,   cudaMemcpyDefault)
     ;   if(is_free_buffer_after_forward_)   freeBuffer()
-    ;   cudaDeviceSynchronize()
     ;   }
     template<typename T> 
     std::vector<size_t> WhisperEncoder<T>::out_size(size_t batch, size_t seq)

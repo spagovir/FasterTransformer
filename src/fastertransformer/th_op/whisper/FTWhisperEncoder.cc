@@ -43,8 +43,6 @@ namespace torch_ext
     ;   output_map.insert({"encoder_output", output_ft_tensor})
     ;   encoder->forward(input_map, output_map, weight)
     ;   cudaStreamSynchronize(context->stream_)
-    ;   PRINT_TENSOR(output_tensor)
-    ;   printf("end of forward\n")
     ;   return output_tensor
     ;   } 
 ;   FTWhisperEncoder::~FTWhisperEncoder()

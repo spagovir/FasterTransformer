@@ -35,7 +35,7 @@ weights = [weight.to("cuda") for weight in [ model.base_model.encoder.conv1.weig
 th.cuda.set_device(0)
 ft_whisper = th.classes.FasterTransformer.FTWhisperEncoder(weights)
 # %%
-input_features_r = e.rearrange(input_features, "b c s -> b s c").to("cuda")
+input_features_r = e.rearrange(input_features, "b c s -> b s c").contiguous().to("cuda")
 
 # %%
 ret = ft_whisper.forward(input_features_r, th.tensor([3000]))
@@ -47,7 +47,7 @@ hfret = e.rearrange(
         model.base_model.encoder.conv1(input_features)
         )))
     ,   "b c s -> b s c"
-    )
+    ) + model.base_model.encoder.embed_positions.weight
 th.cuda.synchronize()
 
 # %%
