@@ -3,27 +3,71 @@
 #include "src/fastertransformer/triton_backend/transformer_triton_backend.hpp"
 #include "src/fastertransformer/utils/Tensor.h"
 #include "src/fastertransformer/utils/allocator.h"
+#include "src/fastertransformer/th_op/whisper/VectorReader.h"
 #include <c10/core/ScalarType.h>
 #include <cuda_runtime_api.h>
+#include <iostream>
 
 namespace torch_ext 
 {
     FTWhisperEncoder::FTWhisperEncoder(std::vector<th::Tensor> weights) 
     {   context = 
         new ft::WhisperCudaContext
-        (   (std::cout << "initializing blas",at::cuda::getCurrentCUDABlasHandle())
-        ,   (std::cout << "getting stream", at::cuda::getCurrentCUDAStream())
-        ,   (std::cout << "creating allocator",new ft::Allocator<ft::AllocatorType::TH>())
+        (   at::cuda::getCurrentCUDABlasHandle()
+        ,   at::cuda::getCurrentCUDAStream()
+        ,   new ft::Allocator<ft::AllocatorType::TH>()
         )
+    ;   ft::WhisperConfig config;
     ;   encoder = new ft::WhisperEncoder<float>
         (   context 
         ,   true
-        ,   ft::WhisperConfig())
-    ;   weight.conv1.kernel = get_ptr<float>(weights.at(0))
-    ;   weight.conv1.bias   = get_ptr<float>(weights.at(1))
-    ;   weight.conv2.kernel = get_ptr<float>(weights.at(2))
-    ;   weight.conv2.bias   = get_ptr<float>(weights.at(3))
-    ;   };
+        ,   config)
+    ;   VectorReader<float> reader(&weights);
+    ;   weight.conv1.kernel = reader.read()
+    ;   weight.conv1.bias   = reader.read()
+    ;   weight.conv2.kernel = reader.read()
+    ;   weight.conv2.bias   = reader.read()
+    ;   for(int i = 0; i < config.encoder_layers; i++)
+        {   ft::WhisperEncoderLayerWeight<float> lweight
+        ;   lweight.self_attn.key_weight.kernel = reader.read()
+        ;   lweight.self_attn.value_weight.kernel = reader.read()
+        ;   lweight.self_attn.value_weight.bias = reader.read()
+        ;   lweight.self_attn.query_weight.kernel = reader.read()
+        ;   lweight.self_attn.query_weight.bias = reader.read()
+        ;   lweight.self_attn.attention_output_weight.kernel = reader.read()
+        ;   lweight.self_attn.attention_output_weight.bias = reader.read()
+        ;   lweight.layernorm1.gamma = reader.read()
+        ;   lweight.layernorm1.beta = reader.read()
+        ;   lweight.ffn.intermediate_weight.kernel = reader.read()
+        ;   lweight.ffn.intermediate_weight.bias = reader.read()
+        ;   lweight.ffn.output_weight.kernel = reader.read()
+        ;   lweight.ffn.output_weight.bias = reader.read()
+        ;   lweight.layernorm2.gamma = reader.read()
+        ;   lweight.layernorm2.beta = reader.read()
+        ;   weight.layers.push_back(lweight)
+        ;   }
+    ;   weight.layernorm.gamma = reader.read()
+    ;   weight.layernorm.beta = reader.read()
+    ;   context->cublas_wrapper->setFP32GemmConfig()
+    ;   std::cout << "testing gemm";
+    th::Tensor A = th::eye(2, th::TensorOptions().device(c10::kCUDA).dtype(th::kFloat32));
+    th::Tensor B = th::eye(2, th::TensorOptions().device(c10::kCUDA).dtype(th::kFloat32));
+    th::Tensor C = th::eye(2, th::TensorOptions().device(c10::kCUDA).dtype(th::kFloat32));
+    context->cublas_wrapper->Gemm(
+        CUBLAS_OP_N,
+        CUBLAS_OP_N,
+        2,
+        2,
+        2,
+        get_ptr<float>(A),
+        2,
+        get_ptr<float>(B),
+        2,
+        get_ptr<float>(C),
+        2);
+    ft::sync_check_cuda_error();
+    PRINT_TENSOR(C);
+    };
 
     th::Tensor FTWhisperEncoder::forward(th::Tensor input_ids, th::Tensor input_lengths)
     {   std::vector<size_t> size = encoder->out_size(input_ids.size(0), input_ids.size(1));

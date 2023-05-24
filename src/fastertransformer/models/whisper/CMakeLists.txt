@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.8)
 
-add_library(WhisperEncoder STATIC WhisperEncoder.h WhisperEncoder.cc Conv1dLayer.cc WhisperKernels.cu)
+add_library(WhisperEncoder STATIC WhisperEncoder.h WhisperEncoder.cc Conv1dLayer.cc WhisperKernels.cu WhisperEncoderLayer.cc)
 set_property(TARGET WhisperEncoder PROPERTY POSITION_INDEPENDENT_CODE ON)
 set_property(TARGET WhisperEncoder PROPERTY CMAKE_CUDA_RESOLVE_DEVICE_SYMBOLS ON)
 add_executable(Conv1dTests Conv1dTests.cc)

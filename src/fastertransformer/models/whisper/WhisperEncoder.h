@@ -4,6 +4,7 @@
 #include "src/fastertransformer/models/whisper/Conv1dLayer.h"
 #include "src/fastertransformer/models/whisper/WhisperConfig.h"
 #include "src/fastertransformer/models/whisper/WhisperCudaContext.h"
+#include "src/fastertransformer/models/whisper/WhisperEncoderLayer.h"
 namespace fastertransformer {
 template <typename T>
 class WhisperEncoder : public BaseLayer {
@@ -27,11 +28,12 @@ class WhisperEncoder : public BaseLayer {
         bool    is_free_buffer_after_forward_
     ;   bool    buffers_allocated_
     ;   T* conv1_out_buffer
-    ;   T* conv2_out_buffer
+    ;   T* residual
     ;   WhisperConfig           config_
     ;   WhisperCudaContext      *context_
     ;   void allocateBuffer(size_t batch, size_t in_seq)
     ;   Conv1dLayer<T>   conv1
     ;   Conv1dLayer<T>   conv2
+    ;   WhisperEncoderLayer<T> attn_block
     ;   }
 ;   }

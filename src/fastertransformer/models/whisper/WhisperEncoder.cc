@@ -32,14 +32,19 @@ namespace fastertransformer
         ,   1
         ,   3
         ,   context->cudnn_handle ))
-    ,   conv2(Conv1dLayer<T>
+    ,   conv2
         (   context->stream_
         ,   context->cublas_wrapper
         ,   context->iallocator
         ,   2 //2
         ,   1
         ,   3
-        ,   context_->cudnn_handle))
+        ,   context_->cudnn_handle)
+    ,   attn_block(
+        config,
+        context,
+        is_free_buffer_after_forward
+        )
     {   if(! is_free_buffer_after_forward) allocateBuffer()
     ;} 
     
@@ -55,7 +60,7 @@ namespace fastertransformer
                 *   in_seq 
                 *   batch
                 *   config_.d_model)
-    ;   conv2_out_buffer = 
+    ;   residual = 
             (T*) context_->iallocator->malloc
             (   sizeof(T)
             *   ((in_seq + 1)/2)
@@ -67,9 +72,9 @@ namespace fastertransformer
 ;   template<typename T>
     void WhisperEncoder<T>::freeBuffer()
     {   context_->iallocator->free((void**) &conv1_out_buffer)
-    ;   context_->iallocator->free((void**) &conv2_out_buffer)
+    ;   context_->iallocator->free((void**) &residual)
     ;   conv1_out_buffer = nullptr
-    ;   conv2_out_buffer = nullptr
+    ;   residual = nullptr
     ;   buffers_allocated_ = false
     ;   }
 ;   template<typename T>
@@ -108,18 +113,29 @@ namespace fastertransformer
         (   MEMORY_GPU
         ,   getTensorType<T>()
         ,   {batch, (seq+1)/2, config.d_model} //(seq+1)/2
-        ,   conv2_out_buffer
+        ,   residual
         )
     ;   conv2.forward
         (   conv1_out_tensor
         ,   conv2_out_tensor
         ,   weight.conv2)
     ;   invokeEmbedSinusoid(conv2_out_tensor, context_->stream_)   
+    ;   sync_check_cuda_error()
+    /*
     ;   cudaMemcpy
         (   out_tensor.getPtr<void>()
         ,   conv2_out_tensor.getPtr<void>()
         ,   conv2_out_tensor.sizeBytes()
         ,   cudaMemcpyDefault)
+        */
+    ;   for(size_t i = 0; i < config_.encoder_layers; i++)
+        {   attn_block.forward
+            (   conv2_out_tensor
+            ,   weight.layers[i]
+            ,   i == config_.encoder_layers - 1 ? weight.layernorm : weight.layers[i+1].layernorm1
+            ,   out_tensor.getPtr<T>()
+            ,   i == 0)
+        ;   }
     ;   if(is_free_buffer_after_forward_)   freeBuffer()
     ;   }
     template<typename T> 

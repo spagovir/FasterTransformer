@@ -20,9 +20,9 @@ struct WhisperConfig {
     : batch_size(1)
     , vocab_size(51865)
     , num_mel_bins(80)
-    , encoder_layers(6)
-    , encoder_attention_heads(4)
-    , decoder_layers(6)
+    , encoder_layers(4) //6 on standard
+    , encoder_attention_heads(6) //huggingface says 4
+    , decoder_layers(4) //6 on standard
     , decoder_attention_heads(4)
     , decoder_ffn_dim(1536)
     , encoder_ffn_dim(1536)

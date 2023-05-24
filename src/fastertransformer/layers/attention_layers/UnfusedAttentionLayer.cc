@@ -16,6 +16,7 @@
 
 #include "src/fastertransformer/layers/attention_layers/UnfusedAttentionLayer.h"
 #include "src/fastertransformer/kernels/unfused_attention_kernels.h"
+#include "src/fastertransformer/utils/cuda_utils.h"
 
 namespace fastertransformer {
 
@@ -56,6 +57,7 @@ void UnfusedAttentionLayer<T>::forward(TensorMap*                output_tensors,
     const int m = input_tensors->at("input_query").shape[0];
     int       k = d_model_;
     int       n = hidden_units_;
+    
 #ifdef SPARSITY_ENABLED
     int m_tmp = m;
     if (m_tmp % 8 != 0) {
@@ -189,6 +191,7 @@ void UnfusedAttentionLayer<T>::forward(TensorMap*                output_tensors,
     // exit(0);
     float scalar = 1 / (sqrtf(size_per_head_ * 1.0f) * q_scaling_);
 
+    
     cublas_wrapper_->stridedBatchedGemm(CUBLAS_OP_T,
                                         CUBLAS_OP_N,
                                         request_seq_len,
@@ -205,6 +208,7 @@ void UnfusedAttentionLayer<T>::forward(TensorMap*                output_tensors,
                                         request_seq_len * request_seq_len,
                                         request_batch_size * head_num_,
                                         scalar);
+    sync_check_cuda_error();
 
     // TODO (fuse with softMax)
     if (use_relative_position_bias) {
@@ -224,6 +228,7 @@ void UnfusedAttentionLayer<T>::forward(TensorMap*                output_tensors,
     param.linear_bias_slopes = linear_bias_slopes;  // (head_num,), optional
     invokeMaskedSoftmax(param, stream_);
     sync_check_cuda_error();
+
 
     if (output_attentions) {
         invokeTransposeAttentions<T>(output_tensors->at("attentions"),
@@ -250,6 +255,7 @@ void UnfusedAttentionLayer<T>::forward(TensorMap*                output_tensors,
                                         size_per_head_,
                                         request_seq_len * size_per_head_,
                                         request_batch_size * head_num_);
+
 
     if (padding_offset == nullptr) {
         invokeTransposeQKV(qkv_buf_2_,

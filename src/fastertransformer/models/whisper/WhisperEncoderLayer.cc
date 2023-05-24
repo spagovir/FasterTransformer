@@ -1,7 +1,9 @@
 #include "src/fastertransformer/models/whisper/WhisperEncoderLayer.h"
+#include "src/fastertransformer/models/whisper/WhisperEncoderLayerWeight.h"
 #include "src/fastertransformer/models/whisper/WhisperKernels.h"
 #include "src/fastertransformer/kernels/layernorm_kernels.h"
 #include "src/fastertransformer/utils/Tensor.h"
+#include "src/fastertransformer/utils/cuda_utils.h"
 
 namespace fastertransformer 
 {
@@ -16,7 +18,7 @@ WhisperEncoderLayer<T>::WhisperEncoderLayer( WhisperConfig      config
     ,   self_attn{ config.batch_size
                  , (config.max_source_positions + 1)/2
                  , config.encoder_attention_heads
-                 , config.d_model
+                 , config.d_model / config.encoder_attention_heads
                  , 1.0
                  , context->stream_
                  , context->cublas_wrapper
@@ -36,6 +38,7 @@ WhisperEncoderLayer<T>::WhisperEncoderLayer( WhisperConfig      config
     ,   max_batch(config.batch_size)
     ,   max_seq(config.max_source_positions / 2 + 1)
     ,   d_model(config.d_model)
+    ,   buffers_allocated(false)
     {
         if(!is_free_buffer_after_forward) allocateBuffer();
     }
@@ -50,9 +53,10 @@ template<typename T>
 void WhisperEncoderLayer<T>::allocateBuffer(size_t batch, size_t seq)
 {
     size_t size = batch * seq * d_model * sizeof(T);
-    pre_buffer = (T*) allocator_->malloc(size);
     attn_mask = (T*) allocator_->malloc(batch * seq * seq * sizeof(T));
+    k_bias = (T*) allocator_->malloc(d_model * sizeof(T));
     invokeCausalAttnMask(attn_mask, batch, seq, stream_);
+    sync_check_cuda_error();
     buffers_allocated = true;
 }
 
@@ -65,13 +69,13 @@ void WhisperEncoderLayer<T>::allocateBuffer()
 template<typename T>
 void WhisperEncoderLayer<T>::freeBuffer()
 {
-    allocator_->free((void**)&pre_buffer);
     allocator_->free((void**)&attn_mask);
+    allocator_->free((void**) &k_bias);
     buffers_allocated = false;
 }
 
 template<typename T> 
-void WhisperEncoderLayer<T>::forward(Tensor residual, WhisperEncoderLayerWeight<T> weight)
+void WhisperEncoderLayer<T>::forward(Tensor residual, WhisperEncoderLayerWeight<T> weight, LayerNormWeight<T> next_ln_weight, T* lno_buffer, bool is_first)
 {
     size_t batch;
     size_t seq;
@@ -85,24 +89,26 @@ void WhisperEncoderLayer<T>::forward(Tensor residual, WhisperEncoderLayerWeight<
         batch = max_batch;
         seq = max_seq;
     }
-
-    invokeGeneralLayerNorm(
-        pre_buffer,
-        residualPtr,
-        weight.layernorm1.gamma,
-        weight.layernorm1.beta,
-        LAYERNORM_EPS,
-        batch * seq,
-        d_model,
-        nullptr,
-        0,
-        stream_
-    );
+    if(!buffers_allocated) allocateBuffer(batch,seq);
+    if(weight.self_attn.key_weight.bias == nullptr) weight.self_attn.key_weight.bias = k_bias;
+    if(is_first)
+        invokeGeneralLayerNorm(
+            lno_buffer,
+            residualPtr,
+            weight.layernorm1.gamma,
+            weight.layernorm1.beta,
+            LAYERNORM_EPS,
+            batch * seq,
+            d_model,
+            nullptr,
+            0,
+            stream_
+        );
     Tensor attn_queries = Tensor(
         MemoryType::MEMORY_GPU, 
         getTensorType<T>(),
         {batch * seq, d_model},
-        (void*) pre_buffer
+        (void*) lno_buffer
         );
     Tensor attn_mask_tensor = Tensor(
         MemoryType::MEMORY_GPU,
@@ -112,32 +118,76 @@ void WhisperEncoderLayer<T>::forward(Tensor residual, WhisperEncoderLayerWeight<
     );
     TensorMap attn_inputs = TensorMap(
         {
-            {"input_queries", attn_queries},
+            {"input_query", attn_queries},
             {"attention_mask", attn_mask_tensor}
         }
     );
-    //this is wrong we need an add not overwritte version for attn. 
     TensorMap attn_outputs = TensorMap(
         {{"hidden_features", Tensor(
             MemoryType::MEMORY_GPU,
             getTensorType<T>(),
             {batch * seq, d_model},
-            (void*) residualPtr
+            (void*) lno_buffer
         )}}
     );
-    invokeGeneralLayerNorm(
-        pre_buffer,
+
+    self_attn.forward(&attn_outputs, &attn_inputs, &weight.self_attn);
+    sync_check_cuda_error();
+    invokeGeneralAddBiasResidualPreLayerNorm(
         residualPtr,
+        lno_buffer,
+        lno_buffer,
+        weight.self_attn.attention_output_weight.bias,
         weight.layernorm2.gamma,
         weight.layernorm2.beta,
+        (T*) nullptr,
         LAYERNORM_EPS,
-        batch*seq,
+        batch * seq,
         d_model,
+        nullptr,
+        nullptr,
+        nullptr,
         nullptr,
         0,
         stream_
     );
+    sync_check_cuda_error();
     
+    TensorMap ffn_input = TensorMap(
+        {{"ffn_input", Tensor(MemoryType::MEMORY_GPU,
+        getTensorType<T>(),
+        {batch * seq, d_model},
+        lno_buffer)}}
+    );
+    TensorMap ffn_output = TensorMap(
+        {{"ffn_output", Tensor(
+            MemoryType::MEMORY_GPU,
+            getTensorType<T>(),
+            {batch * seq, d_model},
+            lno_buffer
+        )}}
+    );
+    ffn.forward(&ffn_output,&ffn_input,&weight.ffn);
+    sync_check_cuda_error();
+    invokeGeneralAddBiasResidualPreLayerNorm(
+        residualPtr,
+        lno_buffer,
+        lno_buffer,
+        weight.ffn.output_weight.bias,
+        next_ln_weight.gamma,
+        next_ln_weight.beta,
+        (T*) nullptr,
+        LAYERNORM_EPS,
+        batch * seq,
+        d_model,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        0,
+        stream_
+    );
+    if(is_free_buffer_after_forward_) freeBuffer();
 }
 
 template class WhisperEncoderLayer<float>;
