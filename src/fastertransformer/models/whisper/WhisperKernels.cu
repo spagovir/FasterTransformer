@@ -48,8 +48,23 @@ __global__ void causalAttnMask(float* out, int batch, int length, int n)
     {
         int qIdx = (idx/length)%length;
         int kIdx = idx % length;
-        if(qIdx >= kIdx) out[idx] = 1.0; else out[idx] = 0.0;
+        if(qIdx >= kIdx) out[idx] = 1.0f; else out[idx] = 0.0f;
     }
+}
+
+__global__ void encoderAttnMask(float* out, int n)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if(idx<n) out[idx] = 1.0f; else out[idx] = 0.0f;
+}
+
+void invokeEncoderAttnMask(float* out, size_t batch, size_t seq, cudaStream_t stream)
+{ 
+    int n = batch * seq * seq;
+    dim3 block,grid;
+    block.x = std::min<int>(1024,n);
+    grid.x = ceil(((float) n)/1024);
+    encoderAttnMask<<<grid,block,0,stream>>>(out,n);
 }
 
 void invokeCausalAttnMask(float* out, size_t batch, size_t seq, cudaStream_t stream)

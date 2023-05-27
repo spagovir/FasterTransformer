@@ -86,7 +86,7 @@ namespace fastertransformer
     //      "encoder_input" : [batch, max_sequence_length, num_mel_bins]
     //      "input_lengths" : [batch]
     // output_tensors:
-    //      "encoder_output" : [batch, seq/2, d_model]
+    //      "encoder_output" : [batch, max_sequence_length / 2 + 1, d_model]
     {   Tensor &in_tensor = input_tensors.at("encoder_input")
     ;   Tensor &out_tensor = output_tensors.at("encoder_output")
     ;   size_t batch = in_tensor.shape[0]
@@ -119,23 +119,32 @@ namespace fastertransformer
         (   conv1_out_tensor
         ,   conv2_out_tensor
         ,   weight.conv2)
+    
     ;   invokeEmbedSinusoid(conv2_out_tensor, context_->stream_)   
     ;   sync_check_cuda_error()
-    /*
+    /* 
     ;   cudaMemcpy
         (   out_tensor.getPtr<void>()
         ,   conv2_out_tensor.getPtr<void>()
         ,   conv2_out_tensor.sizeBytes()
         ,   cudaMemcpyDefault)
-        */
-    ;   for(size_t i = 0; i < config_.encoder_layers; i++)
+    */
+    ;   for(size_t i = 0; i < config.encoder_layers; i++) //config_.encoder_layers; i++)
         {   attn_block.forward
             (   conv2_out_tensor
             ,   weight.layers[i]
-            ,   i == config_.encoder_layers - 1 ? weight.layernorm : weight.layers[i+1].layernorm1
+            ,   (i == (config_.encoder_layers - 1)) ? weight.layernorm : weight.layers[i+1].layernorm1
             ,   out_tensor.getPtr<T>()
             ,   i == 0)
         ;   }
+    /*
+    ;   cudaMemcpy(
+            out_tensor.getPtr<void>(), 
+            residual, 
+            conv2_out_tensor.sizeBytes(),
+            cudaMemcpyDefault)
+    */
+    
     ;   if(is_free_buffer_after_forward_)   freeBuffer()
     ;   }
     template<typename T> 

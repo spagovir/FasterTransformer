@@ -34,18 +34,18 @@ weights = [weight.to("cuda") for weight in [ model.base_model.encoder.conv1.weig
 for layer in model.base_model.encoder.layers:
     weights += \
     [   weight.to("cuda") for weight in 
-    [   layer.self_attn.k_proj.weight
-    ,   layer.self_attn.v_proj.weight
+    [   layer.self_attn.k_proj.weight.T.contiguous()  # * (384/6)**-0.25
+    ,   layer.self_attn.v_proj.weight.T.contiguous()
     ,   layer.self_attn.v_proj.bias
-    ,   layer.self_attn.q_proj.weight
-    ,   layer.self_attn.q_proj.bias
-    ,   layer.self_attn.out_proj.weight
+    ,   layer.self_attn.q_proj.weight.T.contiguous()  # * (384/6)**-0.25
+    ,   layer.self_attn.q_proj.bias  # * (384/6)**-0.25
+    ,   layer.self_attn.out_proj.weight.T.contiguous()  
     ,   layer.self_attn.out_proj.bias
     ,   layer.self_attn_layer_norm.weight
     ,   layer.self_attn_layer_norm.bias
-    ,   layer.fc1.weight
+    ,   layer.fc1.weight.T.contiguous()
     ,   layer.fc1.bias
-    ,   layer.fc2.weight
+    ,   layer.fc2.weight.T.contiguous()
     ,   layer.fc2.bias
     ,   layer.final_layer_norm.weight
     ,   layer.final_layer_norm.bias
@@ -66,13 +66,20 @@ input_features_r = e.rearrange(input_features, "b c s -> b s c").contiguous().to
 ret = ft_whisper.forward(input_features_r, th.tensor([3000]))
 # %%
 import torch.nn as nn
-hfret = e.rearrange(
-    nn.functional.gelu(
-        model.base_model.encoder.conv2(nn.functional.gelu(
-        model.base_model.encoder.conv1(input_features)
-        )))
-    ,   "b c s -> b s c"
-    ) + model.base_model.encoder.embed_positions.weight
+
+hfret1 = e.rearrange(nn.functional.gelu(
+    model.base_model.encoder.conv2(
+        nn.functional.gelu(
+            model.base_model.encoder.conv1(input_features))))
+    ,   "b c s -> b s c") + model.base_model.encoder.embed_positions.weight
+
+hfret1 = model.base_model.encoder.layers[0].self_attn(model.base_model.encoder.layers[0].self_attn_layer_norm(hfret1))
+diff1 = hfret1[0] - (ret.to('cpu') + model.base_model.encoder.layers[0].self_attn.out_proj.bias)
+# %%
+
+hfret = model.base_model.encoder(input_features).last_hidden_state
 th.cuda.synchronize()
 
+# %%
+diff = hfret - ret.to('cpu')
 # %%

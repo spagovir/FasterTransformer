@@ -49,25 +49,7 @@ namespace torch_ext
     ;   weight.layernorm.gamma = reader.read()
     ;   weight.layernorm.beta = reader.read()
     ;   context->cublas_wrapper->setFP32GemmConfig()
-    ;   std::cout << "testing gemm";
-    th::Tensor A = th::eye(2, th::TensorOptions().device(c10::kCUDA).dtype(th::kFloat32));
-    th::Tensor B = th::eye(2, th::TensorOptions().device(c10::kCUDA).dtype(th::kFloat32));
-    th::Tensor C = th::eye(2, th::TensorOptions().device(c10::kCUDA).dtype(th::kFloat32));
-    context->cublas_wrapper->Gemm(
-        CUBLAS_OP_N,
-        CUBLAS_OP_N,
-        2,
-        2,
-        2,
-        get_ptr<float>(A),
-        2,
-        get_ptr<float>(B),
-        2,
-        get_ptr<float>(C),
-        2);
-    ft::sync_check_cuda_error();
-    PRINT_TENSOR(C);
-    };
+    ;   };
 
     th::Tensor FTWhisperEncoder::forward(th::Tensor input_ids, th::Tensor input_lengths)
     {   std::vector<size_t> size = encoder->out_size(input_ids.size(0), input_ids.size(1));

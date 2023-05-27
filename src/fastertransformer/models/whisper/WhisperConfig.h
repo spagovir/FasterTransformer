@@ -26,7 +26,7 @@ struct WhisperConfig {
     , decoder_attention_heads(4)
     , decoder_ffn_dim(1536)
     , encoder_ffn_dim(1536)
-    , max_source_positions(1500)
+    , max_source_positions(3000)
     , max_target_positions(2048)
     , d_model(384)
     {}

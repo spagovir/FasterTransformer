@@ -29,6 +29,7 @@ class WhisperEncoder : public BaseLayer {
     ;   bool    buffers_allocated_
     ;   T* conv1_out_buffer
     ;   T* residual
+    ;   T* attn_mask
     ;   WhisperConfig           config_
     ;   WhisperCudaContext      *context_
     ;   void allocateBuffer(size_t batch, size_t in_seq)

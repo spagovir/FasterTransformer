@@ -3,7 +3,9 @@
 #include "src/fastertransformer/models/whisper/WhisperKernels.h"
 #include "src/fastertransformer/kernels/layernorm_kernels.h"
 #include "src/fastertransformer/utils/Tensor.h"
+#include "src/fastertransformer/utils/cublasMMWrapper.h"
 #include "src/fastertransformer/utils/cuda_utils.h"
+#include "src/fastertransformer/kernels/bert_preprocess_kernels.h"
 
 namespace fastertransformer 
 {
@@ -54,8 +56,10 @@ void WhisperEncoderLayer<T>::allocateBuffer(size_t batch, size_t seq)
 {
     size_t size = batch * seq * d_model * sizeof(T);
     attn_mask = (T*) allocator_->malloc(batch * seq * seq * sizeof(T));
+    float f = 1.0f;
     k_bias = (T*) allocator_->malloc(d_model * sizeof(T));
-    invokeCausalAttnMask(attn_mask, batch, seq, stream_);
+    //invokeCausalAttnMask(attn_mask, batch, seq, stream_);
+    invokeEncoderAttnMask(attn_mask, batch, seq, stream_);
     sync_check_cuda_error();
     buffers_allocated = true;
 }
@@ -103,7 +107,8 @@ void WhisperEncoderLayer<T>::forward(Tensor residual, WhisperEncoderLayerWeight<
             nullptr,
             0,
             stream_
-        );
+        ), sync_check_cuda_error();
+    
     Tensor attn_queries = Tensor(
         MemoryType::MEMORY_GPU, 
         getTensorType<T>(),
@@ -130,6 +135,8 @@ void WhisperEncoderLayer<T>::forward(Tensor residual, WhisperEncoderLayerWeight<
             (void*) lno_buffer
         )}}
     );
+    
+
 
     self_attn.forward(&attn_outputs, &attn_inputs, &weight.self_attn);
     sync_check_cuda_error();
@@ -137,10 +144,11 @@ void WhisperEncoderLayer<T>::forward(Tensor residual, WhisperEncoderLayerWeight<
         residualPtr,
         lno_buffer,
         lno_buffer,
-        weight.self_attn.attention_output_weight.bias,
+        residualPtr,
+        (T*) nullptr,
         weight.layernorm2.gamma,
         weight.layernorm2.beta,
-        (T*) nullptr,
+        weight.self_attn.attention_output_weight.bias,
         LAYERNORM_EPS,
         batch * seq,
         d_model,
@@ -152,7 +160,6 @@ void WhisperEncoderLayer<T>::forward(Tensor residual, WhisperEncoderLayerWeight<
         stream_
     );
     sync_check_cuda_error();
-    
     TensorMap ffn_input = TensorMap(
         {{"ffn_input", Tensor(MemoryType::MEMORY_GPU,
         getTensorType<T>(),
@@ -173,10 +180,11 @@ void WhisperEncoderLayer<T>::forward(Tensor residual, WhisperEncoderLayerWeight<
         residualPtr,
         lno_buffer,
         lno_buffer,
-        weight.ffn.output_weight.bias,
+        residualPtr,
+        (T*) nullptr,
         next_ln_weight.gamma,
         next_ln_weight.beta,
-        (T*) nullptr,
+        weight.ffn.output_weight.bias,
         LAYERNORM_EPS,
         batch * seq,
         d_model,
@@ -187,6 +195,7 @@ void WhisperEncoderLayer<T>::forward(Tensor residual, WhisperEncoderLayerWeight<
         0,
         stream_
     );
+    sync_check_cuda_error();
     if(is_free_buffer_after_forward_) freeBuffer();
 }
 
