@@ -84,7 +84,6 @@ namespace fastertransformer
     ,   WhisperEncoderWeight<T> weight)
     // input_tensors:
     //      "encoder_input" : [batch, max_sequence_length, num_mel_bins]
-    //      "input_lengths" : [batch]
     // output_tensors:
     //      "encoder_output" : [batch, max_sequence_length / 2 + 1, d_model]
     {   Tensor &in_tensor = input_tensors.at("encoder_input")

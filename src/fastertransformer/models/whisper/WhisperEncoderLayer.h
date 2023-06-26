@@ -6,7 +6,6 @@
 #include "src/fastertransformer/models/whisper/WhisperEncoderLayerWeight.h"
 namespace fastertransformer
 {
-#define LAYERNORM_EPS 0.00001
 template<typename T> 
 class WhisperEncoderLayer : public BaseLayer
 {   

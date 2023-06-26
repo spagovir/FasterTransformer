@@ -3,6 +3,7 @@
 
 namespace fastertransformer
 {
+#define LAYERNORM_EPS 0.00001
 struct WhisperConfig { 
     size_t batch_size;
     size_t vocab_size;
@@ -16,6 +17,7 @@ struct WhisperConfig {
     size_t max_source_positions;
     size_t max_target_positions;
     size_t d_model;
+    size_t max_beams;
     WhisperConfig() 
     : batch_size(1)
     , vocab_size(51865)
@@ -29,6 +31,7 @@ struct WhisperConfig {
     , max_source_positions(3000)
     , max_target_positions(2048)
     , d_model(384)
+    , max_beams(5)
     {}
 ;   }
 ; }
