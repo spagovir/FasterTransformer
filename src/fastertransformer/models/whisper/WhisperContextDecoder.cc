@@ -1,6 +1,8 @@
 #include "src/fastertransformer/models/whisper/WhisperContextDecoder.h"
 #include "src/fastertransformer/utils/Tensor.h"
 #include "src/fastertransformer/models/whisper/WhisperKernels.h"
+#include "src/fastertransformer/kernels/decoding_kernels.h"
+#include <cfloat>
 
 namespace fastertransformer
 {
@@ -17,32 +19,107 @@ namespace fastertransformer
         "decoder_inputs" : size_t[batch,target_seq]
         "decoder_input_lengths" : size_t[batch]
         "top_k": Optional size_t[1]
-        "top_p": Optional size_t[1]
-        "beam_search_diversity_rate": Optional size_t[1]
+        NOT SUPPORTED "top_p": Optional size_t[1]
+        NOT SUPPORTED "beam_search_diversity_rate": Optional size_t[1]
         "temperature": Optional [1]
         "beam_width": Optional size_t[1]
-        "input_lengths:" Optional size_t[batch]
+        "input_lengths:" size_t[batch]
+        "end_id": size_t[batch]
+
+        // note: top_k and temperature only used if beam_width == null or 1;
+        // if top_k is set temperature must also be set (and vice versa)
     output_tensors:
         "output_ids" : size_t[batch, beam, max_target_positions]
-        "output_logprobs" : [batch, beam, max_target_positions, vocab_size]
+        NOT_SUPPORTED "output_logprobs" : [batch, beam, max_target_positions, vocab_size]
     */
     {
+        allocateBuffer();
+        const T NEG_INFTY = - FLT_MAX; // note, half precision not yet supported
         size_t batch = input_tensors.at("encoder_outputs").shape[0];
         size_t seq = input_tensors.at("encoder_inputs").shape[1];
-        size_t beam = input_tensors.at("beam_width").getPtr<size_t>()[0];
+        size_t beam = input_tensors.isExist("beam_width")? input_tensors.at("beam_width").getPtr<size_t>()[0] : 1;
+        // repeat encoder output for each beam
         Tensor encoderOutputTensor = input_tensors.at("encoder_outputs");
         invokeRepeat<T>(decoder_input_buf, encoderOutputTensor, 1, config_.max_beams, context_->stream_);
         size_t out_seq = output_tensors.at("output_ids").shape[1];
-        size_t output_beams_lda = batch * config_.max_beams * config_.vocab_size;
-        // output_id_beams : seq x batch x beam x vocab_size
+        size_t output_beams_lda = batch * config_.max_beams;
+        // output_id_beams : seq x batch x beam
+        // initialize output_id_beams from inputs:
+        invokeCopyTransposeRepeat<size_t>(output_id_beams, input_tensors.at("decoder_inputs").getPtr<size_t>(), batch, out_seq, beam, context_->stream_);
+        // initialize buffers used in beam search
+        invokeDecodingInitialize<float>(finished, sequence_lengths, nullptr, cumulative_log_probs, nullptr, batch, beam, out_seq, context_->stream_);
+        // setup dynamic decode
+        TensorMap dynamic_decode_setup_args = 
+            TensorMap(
+                {
+                }
+            );
+        if(input_tensors.isExist("temperature") && input_tensors.isExist("top_k"))
+        {
+            dynamic_decode_setup_args.insert(
+                {
+                    "runtime_top_k",
+                    input_tensors.at("top_k")
+                }
+            );
+            dynamic_decode_setup_args.insert(
+                {
+                    "temperature",
+                    input_tensors.at("temperature")
+                }
+            );
+        }
+        sampler.setup(
+            batch,
+            beam,
+            &dynamic_decode_setup_args
+        );
+
+        // create ping-pong cache indirection buffer
+        Tensor cache_indirs[2] = 
+        {
+            Tensor(
+                MEMORY_GPU,
+                getTensorType<size_t>(),
+                {batch, beam, seq},
+                cache_indir1
+            ),
+            Tensor(
+                MEMORY_GPU,
+                getTensorType<size_t>(),
+                {batch,beam,seq},
+                cache_indir2
+            )
+        };
+
+        // initialize some tensors that are used in all iterations.
+
+        Tensor decoder_output_logits = 
+            Tensor(
+                MEMORY_GPU,
+                getTensorType<T>(),
+                {batch, config_.max_beams, config_.vocab_size},
+                logits_buffer);
+        
+        Tensor finished_tensor = 
+            Tensor(
+                MEMORY_GPU,
+                getTensorType<bool>(),
+                {batch * beam},
+                finished
+            );
+        Tensor cum_log_probs_tensor =
+            Tensor(
+                MEMORY_GPU,
+                getTensorType<float>(),
+                {batch * beam},
+                cumulative_log_probs
+            );
         for(int idx = 0; idx + 1 < out_seq; idx ++)
         {
-            Tensor decoder_output_logits = 
-                Tensor(
-                    MEMORY_GPU,
-                    getTensorType<T>(),
-                    {batch, config_.max_beams, config_.vocab_size},
-                    logits_buffer);
+            int src_idx = idx % 2; 
+            int tgt_idx = 1 - src_idx;
+            Tensor step = Tensor(MEMORY_CPU, getTensorType<size_t>(), {1}, &idx);
             size_t size_per_head = config_.d_model / config_.decoder_attention_heads;
             size_t x = 16 / sizeof(T);
             size_t size_per_head_x = size_per_head/x;
@@ -52,14 +129,6 @@ namespace fastertransformer
                         {
                             "output_logits",
                             decoder_output_logits
-                        },
-                        {   
-                            "cache_indirection",
-                            Tensor(
-                                MEMORY_GPU,
-                                getTensorType<size_t>(),
-                                {batch, config_.max_beams, config_.max_target_positions},
-                                cache_indir)
                         },
                         {
                             "self_key_cache",
@@ -112,10 +181,97 @@ namespace fastertransformer
                             )
                         },
                         {
-
-                        }
+                            "input_ids",
+                            Tensor(
+                                MEMORY_GPU,
+                                getTensorType<size_t>(),
+                                {batch, beam},
+                                output_id_beams + idx * output_beams_lda
+                            )
+                        },
+                        {
+                            "step",
+                            step
+                        },
+                        {   
+                            "cache_indirection",
+                            cache_indirs[src_idx]
+                        },
                     }
                 );
+            decoder.forward(decoder_outputs, decoder_inputs, decoder_weight);
+            if(beam>1)
+            {
+                size_t ite = 0;
+                TensorMap dynamic_decode_input_tensors =
+                    TensorMap(
+                        {
+                            {
+                                "logits",
+                                decoder_output_logits
+                            },
+                            {"step", step},
+                            {
+                                "max_input_length",
+                                Tensor(
+                                    MEMORY_CPU,
+                                    getTensorType<size_t>(),
+                                    {1},
+                                    &out_seq
+                                )
+                            },
+                            {
+                                "end_id",
+                                input_tensors.at("end_id")
+                            },
+                            {
+                                "ite",
+                                Tensor(
+                                    MEMORY_CPU,
+                                    getTensorType<size_t>(),
+                                    {1},
+                                    &ite
+                                )
+                            },
+                            {
+                                "input_lengths",
+                                input_tensors.at("input_lengths")
+                            },
+                            {"src_cache_indirection", cache_indirs[src_idx]}
+                        }
+                    );
+                TensorMap dynamic_decode_output_tensors =
+                    TensorMap(
+                        {
+                            {
+                                "output_ids",
+                                Tensor(
+                                    MEMORY_GPU,
+                                    getTensorType<size_t>(),
+                                    {out_seq, batch, beam},
+                                    output_id_beams
+                                )
+                            },
+                            {
+                                "finished",
+                                finished_tensor
+                            },
+                            {
+                                "cum_log_probs",
+                                cum_log_probs_tensor
+                            },
+                            {
+                                "tgt_cache_indirection",
+                                cache_indirs[tgt_idx]
+                            }
+                        }
+                    );
+                sampler.forward(&dynamic_decode_output_tensors, &dynamic_decode_input_tensors);
+            }
+            else {
+                // Top_k currently not supported. 
+                assert(false);
+            }
         }
 
     }

@@ -203,6 +203,7 @@ void DynamicDecodeLayer<T>::forward(TensorMap* output_tensors, TensorMap* input_
      *   \param  ite [1] on cpu
      *   \param  local_batch_size [1] on cpu
      *   \param  stop_words_list [batch_size, 2, stop_words_length], optional
+     *   \param  end_id [local_batch_size], required only for beam search. 
      *   \param  runtime_top_k [1] or [batch_size] on cpu, optional, uint
      *   \param  runtime_top_p [1] or [batch_size] on cpu, optional, float
      *   \param  temperature [1] or [batch_size] on cpu, optional, float

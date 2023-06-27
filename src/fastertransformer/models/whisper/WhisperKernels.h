@@ -8,4 +8,6 @@ namespace fastertransformer {
     void invokeEmbed(float* out, int* in, float* weight, int n, int d_model, cudaStream_t stream);
     template <typename T>
     void invokeRepeat(T* out, Tensor in, size_t axis, size_t m, cudaStream_t stream);
+    template<typename T>
+    void invokeCopyTransposeRepeat(T* out, T* in, int a, int b, int r, cudaStream_t stream);
 }

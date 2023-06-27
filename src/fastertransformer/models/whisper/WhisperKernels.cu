@@ -123,7 +123,7 @@ void invokeRepeat(T* out, Tensor in, size_t axis, size_t n, cudaStream_t stream)
     dim3 grid, block;
     block.x = std::min<int>(len, 1024);
     grid.x = (len-1)/1024 + 1;
-    repeat<<<grid,block,0,stream(out,in.getPtr<T>(), len, m, n, k);
+    repeat<<<grid,block,0,stream>>>(out,in.getPtr<T>(), len, m, n, k);
     
     
 
@@ -210,8 +210,35 @@ __global__ void oddEvenSort(size_t* values, size_t* out_indices, int n)
 }
 */
 
+/*
+Copies a vector of dimensions [a,b] to one of [b,a,r];
+*/
+template<typename T> 
+__global__ void copyTransposeRepeat(T* out, T* in, int a, int b, int r, int n)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if(idx < n)
+    {
+        int aIdx = (idx / r) % a;
+        int bIdx = idx / r / a; 
+        out[idx] = in[aIdx * b + bIdx];
+    }
+}
+
+template<typename T>
+void invokeCopyTransposeRepeat(T* out, T* in, int a, int b, int r, cudaStream_t stream)
+{
+    int n = a * b * r;
+    dim3 block, grid;
+    block.x = std::min<int>(n, 1024);
+    grid.x = (n-1)/1024 + 1;
+    copyTransposeRepeat<T><<<grid,block,0,stream>>>(out, in, a, b, r, n);
+}
 
 template<float> repeat(float* out, float* in, int len, int m, int n, int k);
 template<float> invokeRepeat(float* out, Tensor in, size_t axis, size_t m, cudaStream_t stream);
+
+template<size_t> copyTransposeRepeat(size_t* out, size_t* in, int a, int b, int r, int n);
+template<size_t> invokeCopyTransposeRepeat(size_t* out, size_t* in, int a, int b, int r, cudaStream_t stream);
 
 }

@@ -88,7 +88,7 @@ namespace fastertransformer
     input_tensors:
     encoder_outputs : [batch * beam, seq, d_model]
     input_ids : int[batch, beam]
-    step: [1]
+    step: [1] on CPU
     cache_indirection: size_t[batch,beam,seq]
 
     output_tensors:
