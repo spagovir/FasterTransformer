@@ -18,6 +18,7 @@ struct WhisperConfig {
     size_t max_target_positions;
     size_t d_model;
     size_t max_beams;
+    size_t eos_token_id;
     WhisperConfig() 
     : batch_size(1)
     , vocab_size(51865)
@@ -32,6 +33,7 @@ struct WhisperConfig {
     , max_target_positions(2048)
     , d_model(384)
     , max_beams(5)
+    , eos_token_id(50256)
     {}
 ;   }
 ; }

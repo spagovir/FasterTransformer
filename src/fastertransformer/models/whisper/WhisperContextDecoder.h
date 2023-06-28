@@ -7,13 +7,14 @@
 namespace fastertransformer 
 {
     template<typename T>
-    class WhisperForConditionalGeneration
+    class WhisperContextDecoder
     {
         WhisperCudaContext *context_;
         WhisperConfig config_;
-        WhisperEncoder<T> encoder;
         WhisperDecoder<T> decoder;
         DynamicDecodeLayer<T> sampler;
+        bool is_free_buffer_after_forward_;
+        bool is_buffers_allocated_;
         // T* encoder_output_buf;
         T* decoder_input_buf;
         float* cumulative_log_probs;
@@ -21,15 +22,20 @@ namespace fastertransformer
         T* self_value_cache;
         T* cross_key_cache;
         T* cross_value_cache;
-        T* cache_indir1; //[batch, beam, d_model]
-        T* cache_indir2;
+        size_t* cache_indir1; //[batch, beam, seq]
+        size_t* cache_indir2;
         T* logits_buffer;
         int* sequence_lengths;
         bool* finished;
         size_t* output_id_beams;
 
+        void allocateBuffer(size_t batch, size_t beam, size_t seq, size_t out_seq);
+        void freeBuffer();
+
         public:
         void forward(TensorMap &output_tensors, TensorMap &input_tensors, WhisperEncoderWeight<T> encoder_weight, WhisperDecoderWeight<T> decoder_weight);
+        WhisperContextDecoder(WhisperCudaContext *context, WhisperConfig config, bool is_free_buffer_after_forward);    
+        ~WhisperContextDecoder();
 
     };
 }

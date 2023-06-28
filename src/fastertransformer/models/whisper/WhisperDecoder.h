@@ -19,9 +19,9 @@ namespace fastertransformer
         T* lno_buf;
         size_t* sequence_lengths;
         size_t* encoder_sequence_lengths;
-        void allocateBuffer(size_t n, size_t encoder_seq);
         bool is_buffers_allocated_;
         public:
+        void allocateBuffer(size_t n, size_t encoder_seq);
         WhisperDecoder(
             WhisperConfig config,
             WhisperCudaContext *context,

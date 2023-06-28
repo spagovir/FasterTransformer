@@ -1,6 +1,7 @@
 #include "src/fastertransformer/models/whisper/WhisperKernels.h"
 #include "src/fastertransformer/utils/cuda_utils.h"
 #include <algorithm>
+#include <cfloat>
 
 namespace fastertransformer
 {
@@ -235,10 +236,50 @@ void invokeCopyTransposeRepeat(T* out, T* in, int a, int b, int r, cudaStream_t 
     copyTransposeRepeat<T><<<grid,block,0,stream>>>(out, in, a, b, r, n);
 }
 
+/*
+Copies a vector of dimensions [a,b,r] to one of dimensions [b,a]
+by selecting an [a] tensor for each b by maximizing along axis r
+on the corresponding row of a tensor of size [b,r].
+*/
+template<typename T1, typename T2> // where T2 supports comparison. n = a * b
+__global__ void copyTransposeMaxBy(T1* out, T1* in, T2* by, int a, int b, int r, int n)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if(idx<n)
+    {
+        int bIdx = idx/a;
+        int aIdx = idx%a; 
+        float max = - (is_same<T2, float> : FLT_MAX ? HALF_FLT_MAX);
+        int rIdx; 
+        for(int i = 0; i < r; i++)
+        {
+            if(by[bIdx*r + i] > max)
+            {
+                max = by[bIdx*r+i];
+                rIdx = i; 
+            }
+        }
+        out[idx] = in[aIdx * b * r + bIdx * r + rIdx];
+    }
+}
+
+template<typename T1, typename T2> 
+void invokeCopyTransposeMaxBy(T1* out, T1* in, T2* by, int a, int b, int r, cudaStream_t stream)
+{
+    int n = a * b;
+    dim3 block,grid;
+    block.x = min(n, 1024);
+    grid.x = (n-1)/1024 + 1; 
+    copyTransposeMaxBy<T1,T2><<<grid,block,0,stream>(out,in,by,a,b,r,n);
+}
+
 template<float> repeat(float* out, float* in, int len, int m, int n, int k);
 template<float> invokeRepeat(float* out, Tensor in, size_t axis, size_t m, cudaStream_t stream);
 
 template<size_t> copyTransposeRepeat(size_t* out, size_t* in, int a, int b, int r, int n);
 template<size_t> invokeCopyTransposeRepeat(size_t* out, size_t* in, int a, int b, int r, cudaStream_t stream);
+
+template<size_t,float> copyTransposeMaxBy(size_t *out, size_t *in, float *by, int a, int b, int r, int n);
+template<size_t,float> invokeCopyTransposeMaxBy(size_t *out, size_t *in, float *by, int a, int b, int r, cudaStream_t stream)
 
 }

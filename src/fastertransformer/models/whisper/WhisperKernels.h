@@ -10,4 +10,6 @@ namespace fastertransformer {
     void invokeRepeat(T* out, Tensor in, size_t axis, size_t m, cudaStream_t stream);
     template<typename T>
     void invokeCopyTransposeRepeat(T* out, T* in, int a, int b, int r, cudaStream_t stream);
+    template<typename T1,typename T2=T1> 
+    void invokeCopyTransposeMaxBy(T1* out, T1* in, T2* by, int a, int b, int r, cudaStream_t stream);
 }

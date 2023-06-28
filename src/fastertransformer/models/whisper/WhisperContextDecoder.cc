@@ -1,4 +1,6 @@
 #include "src/fastertransformer/models/whisper/WhisperContextDecoder.h"
+#include "src/fastertransformer/models/whisper/WhisperConfig.h"
+#include "src/fastertransformer/models/whisper/WhisperCudaContext.h"
 #include "src/fastertransformer/utils/Tensor.h"
 #include "src/fastertransformer/models/whisper/WhisperKernels.h"
 #include "src/fastertransformer/kernels/decoding_kernels.h"
@@ -7,7 +9,7 @@
 namespace fastertransformer
 {
     template<typename T>
-    void WhisperForConditionalGeneration<T>::forward(
+    void WhisperContextDecoder<T>::forward(
         TensorMap &output_tensors,
         TensorMap &input_tensors,
         WhisperEncoderWeight<T> encoder_weight,
@@ -33,16 +35,16 @@ namespace fastertransformer
         NOT_SUPPORTED "output_logprobs" : [batch, beam, max_target_positions, vocab_size]
     */
     {
-        allocateBuffer();
-        const T NEG_INFTY = - FLT_MAX; // note, half precision not yet supported
         size_t batch = input_tensors.at("encoder_outputs").shape[0];
         size_t seq = input_tensors.at("encoder_inputs").shape[1];
         size_t beam = input_tensors.isExist("beam_width")? input_tensors.at("beam_width").getPtr<size_t>()[0] : 1;
+        size_t out_seq = output_tensors.at("output_ids").shape[1];
+        size_t output_beams_lda = batch * beam;
+
+        if(!is_buffers_allocated_) allocateBuffer(batch,beam, seq, out_seq);
         // repeat encoder output for each beam
         Tensor encoderOutputTensor = input_tensors.at("encoder_outputs");
         invokeRepeat<T>(decoder_input_buf, encoderOutputTensor, 1, config_.max_beams, context_->stream_);
-        size_t out_seq = output_tensors.at("output_ids").shape[1];
-        size_t output_beams_lda = batch * config_.max_beams;
         // output_id_beams : seq x batch x beam
         // initialize output_id_beams from inputs:
         invokeCopyTransposeRepeat<size_t>(output_id_beams, input_tensors.at("decoder_inputs").getPtr<size_t>(), batch, out_seq, beam, context_->stream_);
@@ -273,7 +275,63 @@ namespace fastertransformer
                 assert(false);
             }
         }
-
+        invokeCopyTransposeMaxBy<size_t,float>(output_tensors.at("output_ids").getPtr<size_t>(), output_id_beams, cumulative_log_probs, out_seq, batch, beam, context_->stream_);
+        if(is_free_buffer_after_forward_)
+        {
+            freeBuffer();
+        }
     }
-    template class WhisperForConditionalGeneration<float>;
+    template<typename T>
+    void WhisperContextDecoder<T>::allocateBuffer(size_t batch, size_t beam, size_t seq, size_t out_seq)
+    {
+        decoder.allocateBuffer(batch * beam, seq);
+        IAllocator *allocator = context_->iallocator;
+        decoder_input_buf = (T*) allocator->malloc(sizeof(T) * batch * beam * seq);
+        cumulative_log_probs = (T*) allocator->malloc(sizeof(float) * batch * beam);
+        self_key_cache = (T*) allocator->malloc(sizeof(T) * batch * beam * out_seq * config_.d_model * config_.decoder_layers);
+        self_value_cache = (T*) allocator->malloc(sizeof(T) * batch * beam * out_seq * config_.d_model * config_.decoder_layers);
+        cross_key_cache = (T*) allocator->malloc(sizeof(T) * batch * beam * seq * config_.d_model * config_.decoder_layers);
+        cross_value_cache = (T*) allocator->malloc(sizeof(T) * batch * beam * seq * config_.d_model * config_.decoder_layers);
+        cache_indir1 = (size_t*) allocator->malloc(sizeof(size_t) * batch * beam * out_seq * 2);
+        cache_indir2 = cache_indir1 + batch * beam * out_seq;
+        logits_buffer = (T*) allocator->malloc(sizeof(T) * batch * beam);
+        sequence_lengths = (int*) allocator->malloc(sizeof(int) * batch * beam); 
+        finished = (bool*) allocator->malloc(sizeof(bool) * batch * beam);
+        output_id_beams = (size_t*) allocator->malloc(sizeof(size_t) * batch * beam * out_seq);
+        is_buffers_allocated_ = true;
+    }
+    template<typename T> 
+    void WhisperContextDecoder<T>::freeBuffer()
+    {
+        decoder.freeBuffer();
+        IAllocator *allocator = context_->iallocator;
+        allocator->free((void**) &decoder_input_buf);
+        allocator->free((void**) &cumulative_log_probs);
+        allocator->free((void**) & self_key_cache);
+        allocator->free((void**) &self_value_cache);
+        allocator->free((void**) &cross_key_cache);
+        allocator->free((void**) &cross_value_cache);
+        allocator->free((void**) &cache_indir1);
+        allocator->free((void**) &logits_buffer);
+        allocator->free((void**) &sequence_lengths);
+        allocator->free((void**) &finished);
+        allocator->free((void**) &output_id_beams);
+        is_buffers_allocated_ = false;
+    }
+    template<typename T>
+    WhisperContextDecoder<T>::WhisperContextDecoder(WhisperCudaContext *context, WhisperConfig config, bool is_free_buffer_after_forward):
+            context_(context),
+            config_(config),
+            is_free_buffer_after_forward_(is_free_buffer_after_forward),
+            is_buffers_allocated_(false),
+            decoder(config, context, false),
+            sampler(config.vocab_size, config.vocab_size, config.eos_token_id, context->stream_, context->cublas_wrapper, context->iallocator, false, &context->prop_)
+            {}
+    
+    template<typename T>
+    WhisperContextDecoder<T>::~WhisperContextDecoder()
+    {
+        if(!is_buffers_allocated_) freeBuffer();
+    }
+    template class WhisperContextDecoder<float>;
 }

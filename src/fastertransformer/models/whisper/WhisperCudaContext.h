@@ -16,9 +16,9 @@ namespace fastertransformer
     ;   cublasHandle_t           cublasHandle_ // inited
     ;   std::mutex*              cublas_wrapper_mutex_ // ininted
     ;   cublasAlgoMap*           cublas_algo_map_ // inited
-    ;   struct cudaDeviceProp    prop_ // inited
     ;   public:
-        cudnnHandle_t       cudnn_handle
+    ;   struct cudaDeviceProp    prop_ // inited
+    ;   cudnnHandle_t       cudnn_handle
     ;   cudaStream_t        stream_ // set
     ;   cublasMMWrapper*    cublas_wrapper // set
     ;   IAllocator*         iallocator
