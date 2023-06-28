@@ -2,6 +2,7 @@
 #include "src/fastertransformer/utils/cuda_utils.h"
 #include <algorithm>
 #include <cfloat>
+#include <type_traits>
 
 namespace fastertransformer
 {
@@ -104,7 +105,7 @@ void invokeEmbed(float* out, int* in, float* weight, int n, int d_model, cudaStr
 template<typename T>
 __global__ void repeat(T* out, T* in, int len, int m, int n, int k)
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx;
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if(idx < len)
     {
         out[idx] = in[idx/(n *k) + (idx % k)];
@@ -241,7 +242,7 @@ Copies a vector of dimensions [a,b,r] to one of dimensions [b,a]
 by selecting an [a] tensor for each b by maximizing along axis r
 on the corresponding row of a tensor of size [b,r].
 */
-template<typename T1, typename T2> // where T2 supports comparison. n = a * b
+template<typename T1, typename T2> // where T2 supports comparison. n = a * b. Warning only float currently supported.
 __global__ void copyTransposeMaxBy(T1* out, T1* in, T2* by, int a, int b, int r, int n)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -249,7 +250,9 @@ __global__ void copyTransposeMaxBy(T1* out, T1* in, T2* by, int a, int b, int r,
     {
         int bIdx = idx/a;
         int aIdx = idx%a; 
-        float max = - (is_same<T2, float> : FLT_MAX ? HALF_FLT_MAX);
+        #if T2==float
+        float max = - FLT_MAX; //warning only float supported rn.
+        #endif
         int rIdx; 
         for(int i = 0; i < r; i++)
         {
@@ -270,16 +273,13 @@ void invokeCopyTransposeMaxBy(T1* out, T1* in, T2* by, int a, int b, int r, cuda
     dim3 block,grid;
     block.x = min(n, 1024);
     grid.x = (n-1)/1024 + 1; 
-    copyTransposeMaxBy<T1,T2><<<grid,block,0,stream>(out,in,by,a,b,r,n);
+    copyTransposeMaxBy<T1,T2><<<grid,block,0,stream>>>(out,in,by,a,b,r,n);
 }
 
-template<float> repeat(float* out, float* in, int len, int m, int n, int k);
-template<float> invokeRepeat(float* out, Tensor in, size_t axis, size_t m, cudaStream_t stream);
+template<> void invokeRepeat<float>(float* out, Tensor in, size_t axis, size_t m, cudaStream_t stream);
 
-template<size_t> copyTransposeRepeat(size_t* out, size_t* in, int a, int b, int r, int n);
-template<size_t> invokeCopyTransposeRepeat(size_t* out, size_t* in, int a, int b, int r, cudaStream_t stream);
+template<> void invokeCopyTransposeRepeat<size_t>(size_t* out, size_t* in, int a, int b, int r, cudaStream_t stream);
 
-template<size_t,float> copyTransposeMaxBy(size_t *out, size_t *in, float *by, int a, int b, int r, int n);
-template<size_t,float> invokeCopyTransposeMaxBy(size_t *out, size_t *in, float *by, int a, int b, int r, cudaStream_t stream)
+template<> void invokeCopyTransposeMaxBy<size_t,float>(size_t *out, size_t *in, float *by, int a, int b, int r, cudaStream_t stream);
 
 }

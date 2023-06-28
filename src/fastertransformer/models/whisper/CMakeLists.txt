@@ -21,4 +21,11 @@ target_link_libraries(Conv1dTests PUBLIC
     layernorm_kernels
     )
 
+add_library(WhisperDecoder STATIC WhisperDecoder.cc WhisperContextDecoder.cc)
+target_link_libraries(WhisperDecoder PUBLIC
+    -lcudart "${CUDNN_LIBRARY_PATH}"
+    activation_kernels
+    cublasMMWrapper
+    cuda_utils
+    layernorm_kernels)
 

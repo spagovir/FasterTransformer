@@ -1,3 +1,4 @@
+#pragma once;
 #include "src/fastertransformer/models/whisper/WhisperDecoderLayerWeight.h"
 #include <vector>
 namespace fastertransformer {

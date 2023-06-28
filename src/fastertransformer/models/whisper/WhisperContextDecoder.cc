@@ -12,7 +12,6 @@ namespace fastertransformer
     void WhisperContextDecoder<T>::forward(
         TensorMap &output_tensors,
         TensorMap &input_tensors,
-        WhisperEncoderWeight<T> encoder_weight,
         WhisperDecoderWeight<T> decoder_weight
     )
     /*
@@ -20,11 +19,9 @@ namespace fastertransformer
         "encoder_outputs" : [batch, seq, d_model]
         "decoder_inputs" : size_t[batch,target_seq]
         "decoder_input_lengths" : size_t[batch]
-        "top_k": Optional size_t[1]
-        NOT SUPPORTED "top_p": Optional size_t[1]
-        NOT SUPPORTED "beam_search_diversity_rate": Optional size_t[1]
+        NOT SUPPORTED YET "top_k": Optional size_t[1]
         "temperature": Optional [1]
-        "beam_width": Optional size_t[1]
+        "beam_width": Optional size_t[1] CPU
         "input_lengths:" size_t[batch]
         "end_id": size_t[batch]
 

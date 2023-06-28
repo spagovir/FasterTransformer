@@ -1,9 +1,7 @@
 #include "src/fastertransformer/layers/DynamicDecodeLayer.h"
 #include "src/fastertransformer/models/whisper/WhisperConfig.h"
 #include "src/fastertransformer/models/whisper/WhisperCudaContext.h"
-#include "src/fastertransformer/models/whisper/WhisperEncoder.h"
 #include "src/fastertransformer/models/whisper/WhisperDecoder.h"
-#include "src/fastertransformer/models/whisper/WhisperEncoderWeight.h"
 namespace fastertransformer 
 {
     template<typename T>
@@ -33,7 +31,7 @@ namespace fastertransformer
         void freeBuffer();
 
         public:
-        void forward(TensorMap &output_tensors, TensorMap &input_tensors, WhisperEncoderWeight<T> encoder_weight, WhisperDecoderWeight<T> decoder_weight);
+        void forward(TensorMap &output_tensors, TensorMap &input_tensors, WhisperDecoderWeight<T> decoder_weight);
         WhisperContextDecoder(WhisperCudaContext *context, WhisperConfig config, bool is_free_buffer_after_forward);    
         ~WhisperContextDecoder();
 
