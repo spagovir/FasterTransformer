@@ -2,22 +2,23 @@
 #include "src/fastertransformer/layers/DenseWeight.h"
 #include "src/fastertransformer/layers/BaseLayer.h"
 #include "cudnn.h"
+#include <cstdint>
 namespace fastertransformer {
 
 template<typename T1, typename T2=T1>
 class Conv1dLayer : public BaseLayer 
-    { size_t  stride
-    ; size_t  padding
-    ; size_t  kernel_size
+    { uint32_t  stride
+    ; uint32_t  padding
+    ; uint32_t  kernel_size
     ; cudnnHandle_t& cudnn_handle
     ; public : 
        Conv1dLayer
       ( cudaStream_t     stream
       , cublasMMWrapper* cublas_wrapper
       , IAllocator*      allocator
-      , size_t           _stride
-      , size_t           _padding
-      , size_t           _kernel_size
+      , uint32_t           _stride
+      , uint32_t           _padding
+      , uint32_t           _kernel_size
       , cudnnHandle_t&   _cudnn_handle
       ) 
       : BaseLayer

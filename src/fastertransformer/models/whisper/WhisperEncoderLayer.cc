@@ -52,9 +52,9 @@ WhisperEncoderLayer<T>::~WhisperEncoderLayer()
 }
 
 template<typename T> 
-void WhisperEncoderLayer<T>::allocateBuffer(size_t batch, size_t seq)
+void WhisperEncoderLayer<T>::allocateBuffer(uint32_t batch, uint32_t seq)
 {
-    size_t size = batch * seq * d_model * sizeof(T);
+    uint32_t size = batch * seq * d_model * sizeof(T);
     attn_mask = (T*) allocator_->malloc(batch * seq * seq * sizeof(T));
     float f = 1.0f;
     k_bias = (T*) allocator_->malloc(d_model * sizeof(T));
@@ -81,8 +81,8 @@ void WhisperEncoderLayer<T>::freeBuffer()
 template<typename T> 
 void WhisperEncoderLayer<T>::forward(Tensor residual, WhisperEncoderLayerWeight<T> weight, LayerNormWeight<T> next_ln_weight, T* lno_buffer, bool is_first)
 {
-    size_t batch;
-    size_t seq;
+    uint32_t batch;
+    uint32_t seq;
     T* residualPtr = residual.getPtr<T>();
     if(is_free_buffer_after_forward_)
     {

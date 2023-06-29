@@ -23,7 +23,7 @@ class WhisperEncoder : public BaseLayer {
         ,   TensorMap   &output_tensors
         ,   WhisperEncoderWeight<T>    weight)
     ;   ~WhisperEncoder()
-    ;   std::vector<size_t> out_size(size_t batch, size_t seq)
+    ;   std::vector<uint32_t> out_size(uint32_t batch, uint32_t seq)
     ;   protected:
         bool    is_free_buffer_after_forward_
     ;   bool    buffers_allocated_
@@ -32,7 +32,7 @@ class WhisperEncoder : public BaseLayer {
     ;   T* attn_mask
     ;   WhisperConfig           config_
     ;   WhisperCudaContext      *context_
-    ;   void allocateBuffer(size_t batch, size_t in_seq)
+    ;   void allocateBuffer(uint32_t batch, uint32_t in_seq)
     ;   Conv1dLayer<T>   conv1
     ;   Conv1dLayer<T>   conv2
     ;   WhisperEncoderLayer<T> attn_block

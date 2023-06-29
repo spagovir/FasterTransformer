@@ -52,7 +52,7 @@ namespace torch_ext
     ;   };
 
     th::Tensor FTWhisperEncoder::forward(th::Tensor input_ids, th::Tensor input_lengths)
-    {   std::vector<size_t> size = encoder->out_size(input_ids.size(0), input_ids.size(1));
+    {   std::vector<uint32_t> size = encoder->out_size(input_ids.size(0), input_ids.size(1));
     ;   th::Tensor output_tensor 
         =   th::empty
             ({  static_cast<long>(size.at(0))

@@ -1,6 +1,7 @@
 #include "src/fastertransformer/layers/attention_layers/AttentionWeight.h"
 #include "src/fastertransformer/layers/FfnWeight.h"
 #include "src/fastertransformer/kernels/layernorm_kernels.h"
+#include <cstdint>
 
 namespace fastertransformer
 {

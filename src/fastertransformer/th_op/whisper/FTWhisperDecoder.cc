@@ -1,6 +1,9 @@
 #include "src/fastertransformer/th_op/whisper/FTWhisperDecoder.h"
+#include "src/fastertransformer/th_op/th_utils.h"
 #include "src/fastertransformer/th_op/whisper/VectorReader.h"
+#include "src/fastertransformer/models/whisper/WhisperKernels.h"
 #include <ATen/core/TensorBody.h>
+#include <torch/types.h>
 #include <vector>
 
 namespace torch_ext
@@ -42,51 +45,124 @@ namespace torch_ext
         ,   at::cuda::getCurrentCUDAStream()
         ,   new ft::Allocator<ft::AllocatorType::TH>()
         );   
-        ft::WhisperConfig config;
         decoder = new ft::WhisperContextDecoder<float>(context, config,true);
         VectorReader<float> reader(&weights);
         weight_.token_embed = reader.read();
         weight_.pos_embed = reader.read();
-        for(auto layer = weight_.layers.begin();
-            layer != weight_.layers.end();
-            layer++)
+        for(size_t i = 0; i<config.decoder_layers; i++)
         {
-            layer->pre_self_attn_layernorm.gamma = reader.read();
-            layer->pre_self_attn_layernorm.beta = reader.read();
+            ft::WhisperDecoderLayerWeight<float> layer;
+            layer.pre_self_attn_layernorm.gamma = reader.read();
+            layer.pre_self_attn_layernorm.beta = reader.read();
 
-            layer->self_attn.key_weight.kernel = reader.read();
-            layer->self_attn.query_weight.kernel = reader.read();
-            layer->self_attn.query_weight.bias = reader.read();
-            layer->self_attn.value_weight.kernel = reader.read();
-            layer->self_attn.value_weight.bias = reader.read();
-            layer->self_attn.attention_output_weight.kernel = reader.read();
-            layer->self_attn.attention_output_weight.bias = reader.read();
+            layer.self_attn.key_weight.kernel = reader.read();
+            layer.self_attn.key_weight.bias = reader.read();
+            layer.self_attn.query_weight.kernel = reader.read();
+            layer.self_attn.query_weight.bias = reader.read();
+            layer.self_attn.value_weight.kernel = reader.read();
+            layer.self_attn.value_weight.bias = reader.read();
+            layer.self_attn.attention_output_weight.kernel = reader.read();
+            layer.self_attn.attention_output_weight.bias = reader.read();
 
-            layer->pre_cross_attn_layernorm.gamma = reader.read();
-            layer->pre_cross_attn_layernorm.beta = reader.read();
+            layer.pre_cross_attn_layernorm.gamma = reader.read();
+            layer.pre_cross_attn_layernorm.beta = reader.read();
 
-            layer->cross_attn.key_weight.kernel = reader.read();
-            layer->cross_attn.query_weight.kernel = reader.read();
-            layer->cross_attn.query_weight.bias = reader.read();
-            layer->cross_attn.value_weight.kernel = reader.read();
-            layer->cross_attn.value_weight.bias = reader.read();
-            layer->cross_attn.attention_output_weight.kernel = reader.read();
-            layer->cross_attn.attention_output_weight.bias = reader.read();
+            layer.cross_attn.key_weight.kernel = reader.read();
+            layer.cross_attn.key_weight.bias = reader.read();
+            layer.cross_attn.query_weight.kernel = reader.read();
+            layer.cross_attn.query_weight.bias = reader.read();
+            layer.cross_attn.value_weight.kernel = reader.read();
+            layer.cross_attn.value_weight.bias = reader.read();
+            layer.cross_attn.attention_output_weight.kernel = reader.read();
+            layer.cross_attn.attention_output_weight.bias = reader.read();
 
-            layer->pre_ffn_layernorm.gamma = reader.read();
-            layer->pre_ffn_layernorm.beta = reader.read();
+            layer.pre_ffn_layernorm.gamma = reader.read();
+            layer.pre_ffn_layernorm.beta = reader.read();
 
-            layer->ffn.intermediate_weight.kernel = reader.read();
-            layer->ffn.intermediate_weight.bias = reader.read();
-            layer->ffn.output_weight.kernel = reader.read();
-            layer->ffn.output_weight.bias = reader.read();
+            layer.ffn.intermediate_weight.kernel = reader.read();
+            layer.ffn.intermediate_weight.bias = reader.read();
+            layer.ffn.output_weight.kernel = reader.read();
+            layer.ffn.output_weight.bias = reader.read();
+
+            weight_.layers.push_back(layer);
         }
 
         context->cublas_wrapper->setFP32GemmConfig();
     }
 
-    th::Tensor FTWhisperDecoder::forward(th::Tensor encoder_output, th::Tensor inputs, th::Tensor input_lengths, float temperature = 0)
+    th::Tensor FTWhisperDecoder::forward(th::Tensor encoder_output, th::Tensor inputs, th::Tensor input_lengths, double temperature)
     {
+        uint32_t beams = 5; 
+        uint32_t batch = encoder_output.size(0);
+        uint32_t *end_ids = (uint32_t*) context->iallocator->malloc(sizeof(uint32_t) * batch);
+        //cuMemsetD32((size_t) end_ids, end_id, batch);
+        ft::invokeGenericMemset<uint32_t>(end_ids, end_id, batch, context->stream_);
+        ft::TensorMap decoder_inputs(
+            {
+                {
+                    "encoder_outputs",
+                    convert_tensor<float>(encoder_output)
+                },
+                {
+                    "decoder_inputs",
+                    convert_tensor<uint32_t>(inputs)
+                },
+                {
+                    "input_lengths",
+                    convert_tensor<uint32_t>(input_lengths),
+                },
+                {
+                    "beam_width",
+                    ft::Tensor(
+                        ft::MEMORY_CPU,
+                        ft::getTensorType<uint32_t>(),
+                        {1},
+                        &beams
+                    )
+                },
+                {
+                    "end_id",
+                    ft::Tensor(
+                        ft::MEMORY_GPU,
+                        ft::getTensorType<uint32_t>(),
+                        {batch},
+                        end_ids
+                    )
+                }
+            }
+        );
 
+        th::Tensor output_ids = 
+        th::empty(
+            {
+                batch,
+                config.max_target_positions
+            },
+            torch::dtype(torch::kInt32).device(torch::kCUDA).requires_grad(false)
+        );
+        ft::TensorMap decoder_output_tensors(
+            {
+                {"output_ids",
+                convert_tensor<uint32_t>(output_ids)}
+            }
+        );
+        std::cout<<"begin forward";
+        decoder->forward(decoder_output_tensors, decoder_inputs, weight_);
+        std::cout<<"end forward";
+        context->iallocator->free((void**) &end_ids);
+        return output_ids;
+    }
+    
+    FTWhisperDecoder::~FTWhisperDecoder()
+    {
+        delete decoder;
+        delete context;
     }
 }
+
+
+static th::jit::class_<torch_ext::FTWhisperDecoder> ftWhisperDecoderTh 
+=   th::jit::class_<torch_ext::FTWhisperDecoder>("FasterTransformer", "FTWhisperDecoder")
+    .def(torch::jit::init<std::vector<th::Tensor>>())
+    .def("forward", &torch_ext::FTWhisperDecoder::forward)
+;

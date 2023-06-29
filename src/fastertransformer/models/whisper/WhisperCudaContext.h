@@ -8,6 +8,7 @@
 #include "src/fastertransformer/utils/cuda_utils.h"
 #include "cuda.h"
 #include <type_traits>
+#include <cstdint>
 
 namespace fastertransformer 
 {   

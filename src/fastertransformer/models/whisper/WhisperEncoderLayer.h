@@ -13,11 +13,11 @@ class WhisperEncoderLayer : public BaseLayer
     GeluFfnLayer<T> ffn;
     T* attn_mask;
     bool buffers_allocated;
-    size_t max_batch;
-    size_t max_seq;
-    size_t d_model;
+    uint32_t max_batch;
+    uint32_t max_seq;
+    uint32_t d_model;
     T* k_bias;
-    void allocateBuffer(size_t batch, size_t seq);
+    void allocateBuffer(uint32_t batch, uint32_t seq);
     public:
     WhisperEncoderLayer( WhisperConfig config
                        , WhisperCudaContext *context

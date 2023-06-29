@@ -20,14 +20,15 @@ namespace fastertransformer
         T* self_value_cache;
         T* cross_key_cache;
         T* cross_value_cache;
-        size_t* cache_indir1; //[batch, beam, seq]
-        size_t* cache_indir2;
+        uint32_t* parent_ids_buf;
+        uint32_t* cache_indir1; //[batch, beam, seq]
+        uint32_t* cache_indir2;
         T* logits_buffer;
         int* sequence_lengths;
         bool* finished;
-        size_t* output_id_beams;
+        uint32_t* output_id_beams;
 
-        void allocateBuffer(size_t batch, size_t beam, size_t seq, size_t out_seq);
+        void allocateBuffer(uint32_t batch, uint32_t beam, uint32_t seq, uint32_t out_seq);
         void freeBuffer();
 
         public:

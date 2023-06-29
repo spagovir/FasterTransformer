@@ -53,7 +53,7 @@ namespace fastertransformer
             allocateBuffer(config_.batch_size, config_.max_source_positions);
         } ;
     template<typename T>
-    void WhisperEncoder<T>::allocateBuffer(size_t batch, size_t in_seq)
+    void WhisperEncoder<T>::allocateBuffer(uint32_t batch, uint32_t in_seq)
     {   conv1_out_buffer = 
             (T*) context_->iallocator->malloc
                 (   sizeof(T) 
@@ -88,8 +88,8 @@ namespace fastertransformer
     //      "encoder_output" : [batch, max_sequence_length / 2 + 1, d_model]
     {   Tensor &in_tensor = input_tensors.at("encoder_input")
     ;   Tensor &out_tensor = output_tensors.at("encoder_output")
-    ;   size_t batch = in_tensor.shape[0]
-    ;   size_t seq = in_tensor.shape[1]
+    ;   uint32_t batch = in_tensor.shape[0]
+    ;   uint32_t seq = in_tensor.shape[1]
     ;   FT_CHECK(config.num_mel_bins == in_tensor.shape[2])
     ;   if(!buffers_allocated_) allocateBuffer(batch,seq)
     ;   else
@@ -128,7 +128,7 @@ namespace fastertransformer
         ,   conv2_out_tensor.sizeBytes()
         ,   cudaMemcpyDefault)
     */
-    ;   for(size_t i = 0; i < config.encoder_layers; i++) //config_.encoder_layers; i++)
+    ;   for(uint32_t i = 0; i < config.encoder_layers; i++) //config_.encoder_layers; i++)
         {   attn_block.forward
             (   conv2_out_tensor
             ,   weight.layers[i]
@@ -147,7 +147,7 @@ namespace fastertransformer
     ;   if(is_free_buffer_after_forward_)   freeBuffer()
     ;   }
     template<typename T> 
-    std::vector<size_t> WhisperEncoder<T>::out_size(size_t batch, size_t seq)
+    std::vector<uint32_t> WhisperEncoder<T>::out_size(uint32_t batch, uint32_t seq)
     {   return {batch, (seq+1)/2, config.d_model};} //(seq+1)/2
 
     template<typename T>

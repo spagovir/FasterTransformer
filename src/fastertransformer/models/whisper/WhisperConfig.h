@@ -1,24 +1,25 @@
 #pragma once
 #include <stddef.h>
+#include <cstdint>
 
 namespace fastertransformer
 {
 #define LAYERNORM_EPS 0.00001
 struct WhisperConfig { 
-    size_t batch_size;
-    size_t vocab_size;
-    size_t num_mel_bins;
-    size_t encoder_layers;
-    size_t encoder_attention_heads;
-    size_t decoder_layers;
-    size_t decoder_attention_heads;
-    size_t encoder_ffn_dim;
-    size_t decoder_ffn_dim;
-    size_t max_source_positions;
-    size_t max_target_positions;
-    size_t d_model;
-    size_t max_beams;
-    size_t eos_token_id;
+    uint32_t batch_size;
+    uint32_t vocab_size;
+    uint32_t num_mel_bins;
+    uint32_t encoder_layers;
+    uint32_t encoder_attention_heads;
+    uint32_t decoder_layers;
+    uint32_t decoder_attention_heads;
+    uint32_t encoder_ffn_dim;
+    uint32_t decoder_ffn_dim;
+    uint32_t max_source_positions;
+    uint32_t max_target_positions;
+    uint32_t d_model;
+    uint32_t max_beams;
+    uint32_t eos_token_id;
     WhisperConfig() 
     : batch_size(1)
     , vocab_size(51865)

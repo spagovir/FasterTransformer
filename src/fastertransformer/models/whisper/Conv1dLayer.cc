@@ -10,13 +10,13 @@ namespace fastertransformer
         Tensor output_tensor, // batch, width, output_channels
         DenseWeight<T1,T2> weights) 
     {   
-        size_t batch    = input_tensor.shape[0]
-    ;   size_t in_width = input_tensor.shape[1]
-    ;   size_t in_chan  = input_tensor.shape[2]
+        uint32_t batch    = input_tensor.shape[0]
+    ;   uint32_t in_width = input_tensor.shape[1]
+    ;   uint32_t in_chan  = input_tensor.shape[2]
     ;   FT_CHECK(batch == output_tensor.shape[0])
-    ;   size_t out_width = output_tensor.shape[1]
+    ;   uint32_t out_width = output_tensor.shape[1]
     ;   FT_CHECK(out_width = (in_width + padding * 2 + stride - kernel_size) / stride)
-    ;   size_t out_chan = output_tensor.shape[2]
+    ;   uint32_t out_chan = output_tensor.shape[2]
     ;   conv1d
         (   output_tensor.getPtr<T2>()
         ,   input_tensor.getPtr<T1>()

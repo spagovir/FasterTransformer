@@ -83,3 +83,49 @@ th.cuda.synchronize()
 # %%
 diff = hfret - ret.to('cpu')
 # %%
+decoder_weights = [
+    weight.to("cuda") for weight in
+    [
+        model.base_model.decoder.embed_tokens.weight,
+        model.base_model.decoder.embed_positions.weight
+    ]
+
+]
+# %%
+for layer in model.base_model.decoder.layers:
+    decoder_weights += \
+        [weight.to("cuda") for weight in 
+         [
+             layer.self_attn_layer_norm.weight,
+             layer.self_attn_layer_norm.bias,
+             layer.self_attn.k_proj.weight.T.contiguous(),
+             th.empty_like(layer.self_attn.q_proj.bias),
+             layer.self_attn.q_proj.weight.T.contiguous(),
+             layer.self_attn.q_proj.bias,
+             layer.self_attn.v_proj.weight.T.contiguous(),
+             layer.self_attn.v_proj.bias,
+             layer.self_attn.out_proj.weight.T.contiguous(),
+             layer.self_attn.out_proj.bias,
+             layer.encoder_attn_layer_norm.weight,
+             layer.encoder_attn_layer_norm.bias,
+             layer.encoder_attn.k_proj.weight.T.contiguous(),
+             th.empty_like(layer.encoder_attn.q_proj.bias),
+             layer.encoder_attn.q_proj.weight.T.contiguous(),
+             layer.encoder_attn.q_proj.bias,
+             layer.encoder_attn.v_proj.weight.T.contiguous(),
+             layer.encoder_attn.v_proj.bias,
+             layer.encoder_attn.out_proj.weight.T.contiguous(),
+             layer.encoder_attn.out_proj.bias,
+             layer.final_layer_norm.weight,
+             layer.final_layer_norm.bias,
+             layer.fc1.weight,
+             layer.fc1.bias,
+             layer.fc2.weight,
+             layer.fc2.bias
+         ]]
+# %%
+ft_whisper_decoder = th.classes.FasterTransformer.FTWhisperDecoder(decoder_weights)
+# %%
+out_seq = 2048
+ft_whisper_decoder.forward(ret, th.empty([1,out_seq],dtype=th.int, device="cuda"), th.tensor([0],dtype=th.int, device="cuda" ), 0.0)
+# %%

@@ -1,10 +1,12 @@
 #include "src/fastertransformer/models/whisper/WhisperContextDecoder.h"
 #include "src/fastertransformer/models/whisper/WhisperConfig.h"
 #include "src/fastertransformer/models/whisper/WhisperCudaContext.h"
+#include "src/fastertransformer/th_op/th_utils.h"
 #include "src/fastertransformer/utils/Tensor.h"
 #include "src/fastertransformer/models/whisper/WhisperKernels.h"
 #include "src/fastertransformer/kernels/decoding_kernels.h"
 #include <cfloat>
+#include <iostream>
 
 namespace fastertransformer
 {
@@ -17,26 +19,27 @@ namespace fastertransformer
     /*
     input_tensors:
         "encoder_outputs" : [batch, seq, d_model]
-        "decoder_inputs" : size_t[batch,target_seq]
-        "decoder_input_lengths" : size_t[batch]
-        NOT SUPPORTED YET "top_k": Optional size_t[1]
+        "decoder_inputs" : uint32_t[batch,target_seq]
+        "decoder_input_lengths" : uint32_t[batch]
+        NOT SUPPORTED YET "top_k": Optional uint32_t[1]
         "temperature": Optional [1]
-        "beam_width": Optional size_t[1] CPU
-        "input_lengths:" size_t[batch]
-        "end_id": size_t[batch]
+        "beam_width": Optional uint32_t[1] CPU
+        "input_lengths:" uint32_t[batch]
+        "end_id": uint32_t[batch] GPU 
 
         // note: top_k and temperature only used if beam_width == null or 1;
         // if top_k is set temperature must also be set (and vice versa)
     output_tensors:
-        "output_ids" : size_t[batch, beam, max_target_positions]
+        "output_ids" : uint32_t[batch, beam, max_target_positions]
         NOT_SUPPORTED "output_logprobs" : [batch, beam, max_target_positions, vocab_size]
     */
     {
-        size_t batch = input_tensors.at("encoder_outputs").shape[0];
-        size_t seq = input_tensors.at("encoder_inputs").shape[1];
-        size_t beam = input_tensors.isExist("beam_width")? input_tensors.at("beam_width").getPtr<size_t>()[0] : 1;
-        size_t out_seq = output_tensors.at("output_ids").shape[1];
-        size_t output_beams_lda = batch * beam;
+        uint32_t batch = input_tensors.at("encoder_outputs").shape[0];
+        std::cout << "encoder_outputs shape";
+        uint32_t seq = input_tensors.at("encoder_outputs").shape[1];
+        uint32_t beam = input_tensors.isExist("beam_width")? input_tensors.at("beam_width").getPtr<uint32_t>()[0] : 1;
+        uint32_t out_seq = output_tensors.at("output_ids").shape[1];
+        uint32_t output_beams_lda = batch * beam;
 
         if(!is_buffers_allocated_) allocateBuffer(batch,beam, seq, out_seq);
         // repeat encoder output for each beam
@@ -44,7 +47,7 @@ namespace fastertransformer
         invokeRepeat<T>(decoder_input_buf, encoderOutputTensor, 1, config_.max_beams, context_->stream_);
         // output_id_beams : seq x batch x beam
         // initialize output_id_beams from inputs:
-        invokeCopyTransposeRepeat<size_t>(output_id_beams, input_tensors.at("decoder_inputs").getPtr<size_t>(), batch, out_seq, beam, context_->stream_);
+        invokeCopyTransposeRepeat<uint32_t>(output_id_beams, input_tensors.at("decoder_inputs").getPtr<uint32_t>(), batch, out_seq, beam, context_->stream_);
         // initialize buffers used in beam search
         invokeDecodingInitialize<float>(finished, sequence_lengths, nullptr, cumulative_log_probs, nullptr, batch, beam, out_seq, context_->stream_);
         // setup dynamic decode
@@ -73,20 +76,21 @@ namespace fastertransformer
             beam,
             &dynamic_decode_setup_args
         );
-
+        std::cout<<"before ping pong creation";
+        print_to_screen(cache_indir1, 10);
         // create ping-pong cache indirection buffer
         Tensor cache_indirs[2] = 
         {
             Tensor(
                 MEMORY_GPU,
-                getTensorType<size_t>(),
-                {batch, beam, seq},
+                getTensorType<uint32_t>(),
+                {batch, beam, out_seq},
                 cache_indir1
             ),
             Tensor(
                 MEMORY_GPU,
-                getTensorType<size_t>(),
-                {batch,beam,seq},
+                getTensorType<uint32_t>(),
+                {batch,beam,out_seq},
                 cache_indir2
             )
         };
@@ -114,14 +118,15 @@ namespace fastertransformer
                 {batch * beam},
                 cumulative_log_probs
             );
+        std::cout << "beginning main loop";
         for(int idx = 0; idx + 1 < out_seq; idx ++)
         {
             int src_idx = idx % 2; 
             int tgt_idx = 1 - src_idx;
-            Tensor step = Tensor(MEMORY_CPU, getTensorType<size_t>(), {1}, &idx);
-            size_t size_per_head = config_.d_model / config_.decoder_attention_heads;
-            size_t x = 16 / sizeof(T);
-            size_t size_per_head_x = size_per_head/x;
+            Tensor step = Tensor(MEMORY_CPU, getTensorType<uint32_t>(), {1}, &idx);
+            uint32_t size_per_head = config_.d_model / config_.decoder_attention_heads;
+            uint32_t x = 16 / sizeof(T);
+            uint32_t size_per_head_x = size_per_head/x;
             TensorMap decoder_outputs = 
                 TensorMap(
                     {
@@ -183,7 +188,7 @@ namespace fastertransformer
                             "input_ids",
                             Tensor(
                                 MEMORY_GPU,
-                                getTensorType<size_t>(),
+                                getTensorType<uint32_t>(),
                                 {batch, beam},
                                 output_id_beams + idx * output_beams_lda
                             )
@@ -201,7 +206,7 @@ namespace fastertransformer
             decoder.forward(decoder_outputs, decoder_inputs, decoder_weight);
             if(beam>1)
             {
-                size_t ite = 0;
+                uint32_t ite = 0;
                 TensorMap dynamic_decode_input_tensors =
                     TensorMap(
                         {
@@ -214,7 +219,7 @@ namespace fastertransformer
                                 "max_input_length",
                                 Tensor(
                                     MEMORY_CPU,
-                                    getTensorType<size_t>(),
+                                    getTensorType<uint32_t>(),
                                     {1},
                                     &out_seq
                                 )
@@ -227,7 +232,7 @@ namespace fastertransformer
                                 "ite",
                                 Tensor(
                                     MEMORY_CPU,
-                                    getTensorType<size_t>(),
+                                    getTensorType<uint32_t>(),
                                     {1},
                                     &ite
                                 )
@@ -236,7 +241,14 @@ namespace fastertransformer
                                 "input_lengths",
                                 input_tensors.at("input_lengths")
                             },
-                            {"src_cache_indirection", cache_indirs[src_idx]}
+                            {"src_cache_indirection", cache_indirs[src_idx]},
+                            {"local_batch_size",
+                            Tensor(
+                                MEMORY_CPU,
+                                getTensorType<uint32_t>(),
+                                {1},
+                                &batch
+                            )}
                         }
                     );
                 TensorMap dynamic_decode_output_tensors =
@@ -246,7 +258,7 @@ namespace fastertransformer
                                 "output_ids",
                                 Tensor(
                                     MEMORY_GPU,
-                                    getTensorType<size_t>(),
+                                    getTensorType<uint32_t>(),
                                     {out_seq, batch, beam},
                                     output_id_beams
                                 )
@@ -262,39 +274,47 @@ namespace fastertransformer
                             {
                                 "tgt_cache_indirection",
                                 cache_indirs[tgt_idx]
-                            }
+                            },
+                            {"parent_ids",
+                            Tensor(MEMORY_GPU,
+                            getTensorType<uint32_t>(),
+                            {out_seq, batch * beam},
+                            parent_ids_buf)}
                         }
                     );
+                print_to_screen(cache_indir1, 10);
                 sampler.forward(&dynamic_decode_output_tensors, &dynamic_decode_input_tensors);
+                std::cout << "beam search step finished\n";
             }
             else {
                 // Top_k currently not supported. 
                 assert(false);
             }
         }
-        invokeCopyTransposeMaxBy<size_t,float>(output_tensors.at("output_ids").getPtr<size_t>(), output_id_beams, cumulative_log_probs, out_seq, batch, beam, context_->stream_);
+        invokeCopyTransposeMaxBy<uint32_t,float>(output_tensors.at("output_ids").getPtr<uint32_t>(), output_id_beams, cumulative_log_probs, out_seq, batch, beam, context_->stream_);
         if(is_free_buffer_after_forward_)
         {
             freeBuffer();
         }
     }
     template<typename T>
-    void WhisperContextDecoder<T>::allocateBuffer(size_t batch, size_t beam, size_t seq, size_t out_seq)
+    void WhisperContextDecoder<T>::allocateBuffer(uint32_t batch, uint32_t beam, uint32_t seq, uint32_t out_seq)
     {
         decoder.allocateBuffer(batch * beam, seq);
         IAllocator *allocator = context_->iallocator;
+        parent_ids_buf = (uint32_t*) allocator->malloc(sizeof(uint32_t) * batch * beam * out_seq);
         decoder_input_buf = (T*) allocator->malloc(sizeof(T) * batch * beam * seq);
         cumulative_log_probs = (T*) allocator->malloc(sizeof(float) * batch * beam);
         self_key_cache = (T*) allocator->malloc(sizeof(T) * batch * beam * out_seq * config_.d_model * config_.decoder_layers);
         self_value_cache = (T*) allocator->malloc(sizeof(T) * batch * beam * out_seq * config_.d_model * config_.decoder_layers);
         cross_key_cache = (T*) allocator->malloc(sizeof(T) * batch * beam * seq * config_.d_model * config_.decoder_layers);
         cross_value_cache = (T*) allocator->malloc(sizeof(T) * batch * beam * seq * config_.d_model * config_.decoder_layers);
-        cache_indir1 = (size_t*) allocator->malloc(sizeof(size_t) * batch * beam * out_seq * 2);
+        cache_indir1 = (uint32_t*) allocator->malloc(sizeof(uint32_t) * batch * beam * out_seq * 2);
         cache_indir2 = cache_indir1 + batch * beam * out_seq;
         logits_buffer = (T*) allocator->malloc(sizeof(T) * batch * beam);
         sequence_lengths = (int*) allocator->malloc(sizeof(int) * batch * beam); 
         finished = (bool*) allocator->malloc(sizeof(bool) * batch * beam);
-        output_id_beams = (size_t*) allocator->malloc(sizeof(size_t) * batch * beam * out_seq);
+        output_id_beams = (uint32_t*) allocator->malloc(sizeof(uint32_t) * batch * beam * out_seq);
         is_buffers_allocated_ = true;
     }
     template<typename T> 
@@ -313,6 +333,7 @@ namespace fastertransformer
         allocator->free((void**) &sequence_lengths);
         allocator->free((void**) &finished);
         allocator->free((void**) &output_id_beams);
+        allocator->free((void**) &parent_ids_buf);
         is_buffers_allocated_ = false;
     }
     template<typename T>

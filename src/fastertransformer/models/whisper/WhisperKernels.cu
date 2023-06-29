@@ -2,6 +2,8 @@
 #include "src/fastertransformer/utils/cuda_utils.h"
 #include <algorithm>
 #include <cfloat>
+#include <cstdint>
+#include <iostream>
 #include <type_traits>
 
 namespace fastertransformer
@@ -30,7 +32,7 @@ __global__ void embedSinusoid( float* out
     }
 }
 
-void invokeEmbedSinusoid(Tensor out_tensor, cudaStream_t stream, size_t max_time)
+void invokeEmbedSinusoid(Tensor out_tensor, cudaStream_t stream, uint32_t max_time)
 {
     int n = (int) out_tensor.size();
     dim3 block, grid;
@@ -61,7 +63,7 @@ __global__ void encoderAttnMask(float* out, int n)
     if(idx<n) out[idx] = 1.0f; else out[idx] = 0.0f;
 }
 
-void invokeEncoderAttnMask(float* out, size_t batch, size_t seq, cudaStream_t stream)
+void invokeEncoderAttnMask(float* out, uint32_t batch, uint32_t seq, cudaStream_t stream)
 { 
     int n = batch * seq * seq;
     dim3 block,grid;
@@ -70,7 +72,7 @@ void invokeEncoderAttnMask(float* out, size_t batch, size_t seq, cudaStream_t st
     encoderAttnMask<<<grid,block,0,stream>>>(out,n);
 }
 
-void invokeCausalAttnMask(float* out, size_t batch, size_t seq, cudaStream_t stream)
+void invokeCausalAttnMask(float* out, uint32_t batch, uint32_t seq, cudaStream_t stream)
 {
     int n = batch * seq * seq;
     dim3 block,grid;
@@ -113,14 +115,15 @@ __global__ void repeat(T* out, T* in, int len, int m, int n, int k)
 }
 
 template<typename T>
-void invokeRepeat(T* out, Tensor in, size_t axis, size_t n, cudaStream_t stream)
+void invokeRepeat(T* out, Tensor in, uint32_t axis, uint32_t n, cudaStream_t stream)
 {
     int m = 1;
-    for(size_t i = 0; i < axis; i++)
+    for(uint32_t i = 0; i < axis; i++)
         m *= in.shape[i];
     int k = 1;
-    for(size_t i = axis; i < in.shape.size(); i++)
+    for(uint32_t i = axis; i < in.shape.size(); i++)
         k *= in.shape[i];
+    std::cout << "repeat shape";
     int len = n * m * k; 
     dim3 grid, block;
     block.x = std::min<int>(len, 1024);
@@ -135,12 +138,12 @@ void invokeRepeat(T* out, Tensor in, size_t axis, size_t n, cudaStream_t stream)
 // mergesorts an array of integers of size < 1024,
 // returning a sorted array of the indices of those integers.
 /*
-__global__ void pointerMergeSort(size_t* values, size_t* out, int n){
-    __shared__ size_t buffer[1024];
+__global__ void pointerMergeSort(uint32_t* values, uint32_t* out, int n){
+    __shared__ uint32_t buffer[1024];
     int idx = threadIdx.x;
-    buffer[idx] = (size_t) idx; 
-    size_t* from = &buffer;
-    size_t* to = out;
+    buffer[idx] = (uint32_t) idx; 
+    uint32_t* from = &buffer;
+    uint32_t* to = out;
     for(int i = 1; i<= n; i>>=1)
     {
         int left_idx = (i>>1) * idx;
@@ -160,7 +163,7 @@ __global__ void pointerMergeSort(size_t* values, size_t* out, int n){
                 else to[target_idx] = from[right_idx++];
             }
         }
-        size_t* c = to;
+        uint32_t* c = to;
         to = from;
         from = c;
         __syncthreads();
@@ -169,7 +172,7 @@ __global__ void pointerMergeSort(size_t* values, size_t* out, int n){
 }
 */
 /*
-__global__ void oddEvenSort(size_t* values, size_t* out_indices, int n)
+__global__ void oddEvenSort(uint32_t* values, uint32_t* out_indices, int n)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if(idx<n)
@@ -191,7 +194,7 @@ __global__ void oddEvenSort(size_t* values, size_t* out_indices, int n)
                         >   values[out_indices[odd_right_idx]]
                     )
                 {
-                    size_t c = out_indices[odd_left_idx];
+                    uint32_t c = out_indices[odd_left_idx];
                     out_indices[odd_left_idx] = out_indices[odd_right_idx];
                     out_indices[odd_right_idx] = c;
                 }
@@ -202,7 +205,7 @@ __global__ void oddEvenSort(size_t* values, size_t* out_indices, int n)
                         >   values[out_indices[even_right_idx]]
                     ) 
                 {
-                    size_t c = out_indices[even_left_idx];
+                    uint32_t c = out_indices[even_left_idx];
                     out_indices[even_left_idx] = out_indices[even_right_idx];
                     out_indices[even_right_idx] = c;
                 } 
@@ -276,10 +279,28 @@ void invokeCopyTransposeMaxBy(T1* out, T1* in, T2* by, int a, int b, int r, cuda
     copyTransposeMaxBy<T1,T2><<<grid,block,0,stream>>>(out,in,by,a,b,r,n);
 }
 
-template<> void invokeRepeat<float>(float* out, Tensor in, size_t axis, size_t m, cudaStream_t stream);
+template<typename T>
+__global__ void genericMemset(T *out, T val, int n)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if(idx<n) out[idx] = val;
+}
 
-template<> void invokeCopyTransposeRepeat<size_t>(size_t* out, size_t* in, int a, int b, int r, cudaStream_t stream);
+template<typename T>
+void invokeGenericMemset(T *out, T val, int n, cudaStream_t stream)
+{
+    dim3 block,grid;
+    block.x = min(n,1024);
+    grid.x = (n-1)/1024+1;
+    genericMemset<T><<<grid,block,0,stream>>>(out, val,n);
+}
 
-template<> void invokeCopyTransposeMaxBy<size_t,float>(size_t *out, size_t *in, float *by, int a, int b, int r, cudaStream_t stream);
+template void invokeGenericMemset<uint32_t>(uint32_t *out, uint32_t val, int n, cudaStream_t stream);
+
+template void invokeRepeat<float>(float* out, Tensor in, uint32_t axis, uint32_t m, cudaStream_t stream);
+
+template void invokeCopyTransposeRepeat<uint32_t>(uint32_t* out, uint32_t* in, int a, int b, int r, cudaStream_t stream);
+
+template void invokeCopyTransposeMaxBy<uint32_t,float>(uint32_t *out, uint32_t *in, float *by, int a, int b, int r, cudaStream_t stream);
 
 }

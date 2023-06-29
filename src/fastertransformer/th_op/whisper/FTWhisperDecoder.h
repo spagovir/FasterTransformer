@@ -13,9 +13,11 @@ namespace torch_ext{
         ft::WhisperContextDecoder<float> *decoder;
         ft::WhisperDecoderWeight<float> weight_;
         ft::WhisperCudaContext *context;
+        ft::WhisperConfig config;
+        uint32_t end_id;
         public:
         FTWhisperDecoder(std::vector<th::Tensor> weights);
         ~FTWhisperDecoder();
-        th::Tensor forward(th::Tensor encoder_outputs, th::Tensor inputs, th::Tensor input_lengths, float temperature = 0);
+        th::Tensor forward(th::Tensor encoder_outputs, th::Tensor inputs, th::Tensor input_lengths, double temperature = 0);
     };
 }

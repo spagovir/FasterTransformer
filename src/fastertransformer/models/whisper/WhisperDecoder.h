@@ -17,11 +17,11 @@ namespace fastertransformer
         GeluFfnLayer<T> ffn;
         T* residual_buf;
         T* lno_buf;
-        size_t* sequence_lengths;
-        size_t* encoder_sequence_lengths;
+        uint32_t* sequence_lengths;
+        uint32_t* encoder_sequence_lengths;
         bool is_buffers_allocated_;
         public:
-        void allocateBuffer(size_t n, size_t encoder_seq);
+        void allocateBuffer(uint32_t n, uint32_t encoder_seq);
         WhisperDecoder(
             WhisperConfig config,
             WhisperCudaContext *context,

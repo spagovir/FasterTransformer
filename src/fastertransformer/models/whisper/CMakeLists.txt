@@ -21,7 +21,9 @@ target_link_libraries(Conv1dTests PUBLIC
     layernorm_kernels
     )
 
-add_library(WhisperDecoder STATIC WhisperDecoder.cc WhisperContextDecoder.cc)
+add_library(WhisperDecoder STATIC WhisperDecoder.cc WhisperContextDecoder.cc WhisperKernels.cu)
+set_property(TARGET WhisperDecoder PROPERTY POSITION_INDEPENDENT_CODE ON)
+set_property(TARGET WhisperDecoder PROPERTY CMAKE_CUDA_RESOLVE_DEVICE_SYMBOLS ON)
 target_link_libraries(WhisperDecoder PUBLIC
     -lcudart "${CUDNN_LIBRARY_PATH}"
     activation_kernels

@@ -25,7 +25,7 @@ int main(int argc, char **argv)
 ;   const int k2_dims = out_chan*out_chan*3
 ;   float *k1 = (float*) context->iallocator->malloc(k1_dims *4)
 ;   float *k2 = (float*) context->iallocator->malloc(k2_dims*4)
-;   auto engine = std::mersenne_twister_engine<size_t,32,624,397,31,0x9908b0df,11, 0xffffffff,7,0x9d2c5680,15,0xefc60000,18,1812433253>()
+;   auto engine = std::mersenne_twister_engine<uint32_t,32,624,397,31,0x9908b0df,11, 0xffffffff,7,0x9d2c5680,15,0xefc60000,18,1812433253>()
 ;   std::uniform_real_distribution<float> dist = std::uniform_real_distribution<float>(0,1)
 ;   cudnnHandle_t& handle1 = context->cudnn_handle
 ;   cudnnHandle_t& handle2 = context->cudnn_handle
