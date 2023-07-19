@@ -25,8 +25,10 @@ namespace fastertransformer
         uint32_t* cache_indir2;
         T* logits_buffer;
         int* sequence_lengths;
+        int* padding_count;
         bool* finished;
         uint32_t* output_id_beams;
+        
 
         void allocateBuffer(uint32_t batch, uint32_t beam, uint32_t seq, uint32_t out_seq);
         void freeBuffer();

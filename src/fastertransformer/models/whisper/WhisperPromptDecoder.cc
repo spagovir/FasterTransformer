@@ -1,4 +1,4 @@
-#include "src/fastertransformer/models/whisper/WhisperDecoder.h"
+#include "src/fastertransformer/models/whisper/WhisperPromptDecoder.h"
 #include "src/fastertransformer/kernels/layernorm_int8_kernels.h"
 #include "src/fastertransformer/kernels/layernorm_kernels.h"
 #include "src/fastertransformer/layers/BaseLayer.h"
@@ -14,7 +14,7 @@
 namespace fastertransformer
 {
     template<typename T> 
-    WhisperDecoder<T>::WhisperDecoder(
+    WhisperPromptDecoder<T>::WhisperPromptDecoder(
         WhisperConfig config,
         WhisperCudaContext *context,
         bool is_free_after_forward
@@ -60,7 +60,7 @@ namespace fastertransformer
 
 
     template<typename T>
-    void WhisperDecoder<T>::allocateBuffer(uint32_t n, uint32_t encoder_seq)
+    void WhisperPromptDecoder<T>::allocateBuffer(uint32_t n, uint32_t encoder_seq)
     {
         residual_buf = (float*) allocator_->malloc(n * config_.d_model * sizeof(T));
         lno_buf = (float*) allocator_->malloc(n * config_.d_model * sizeof(T));
@@ -76,12 +76,12 @@ namespace fastertransformer
     }
     
     template<typename T> 
-    void WhisperDecoder<T>::allocateBuffer(){
+    void WhisperPromptDecoder<T>::allocateBuffer(){
         assert(false);
     }
 
     template<typename T> 
-    void WhisperDecoder<T>::freeBuffer(){
+    void WhisperPromptDecoder<T>::freeBuffer(){
         allocator_->free((void**) &residual_buf);
         allocator_->free((void**) &lno_buf);
         // allocator_->free((void**) &sequence_lengths);
@@ -92,33 +92,34 @@ namespace fastertransformer
     void usr_prompt(){ std::cout << "press enter to continue \n"; while(std::cin.get()!='\n');}
 
     template<typename T>
-    void WhisperDecoder<T>::forward(TensorMap &output_tensors, TensorMap &input_tensors, WhisperDecoderWeight<T> weight)
+    void WhisperPromptDecoder<T>::forward(TensorMap &output_tensors, TensorMap &input_tensors, WhisperPromptDecoderWeight<T> weight)
     /*
     input_tensors:
-    encoder_outputs : [batch * beam, seq, d_model]
-    input_ids : int[batch, beam]
-    step: [1] on CPU
-    cache_indirection: uint32_t[batch,beam,seq]
-    sequence_lengths: uint32_t[batch * beam]
-    padding_offsets: uint32_t[batch * beam]
+    encoder_outputs : [batch, seq, d_model]
+    input_ids : int[batch, max_input_length]
+    // step: [1] on CPU
+    // cache_indirection: uint32_t[batch, max_input_length]
+    // sequence_lengths: uint32_t[batch * beam]
+    // padding_offsets: uint32_t[batch * beam]
 
     output_tensors:
-    output_logits : [batch, beam, vocab_size]
-    self_key_cache : [layers, batch * beam, num_heads, size_per_head/x, seq, x] // x = 16/sizeof(T) (eg, packed 128 bit floats)
-    self_value_cache : [layers, batch * beam, num_heads, seq, size_per_head]
+    // output_logits : [batch, beam, vocab_size]
+    self_key_cache : [layers, batch, num_heads, size_per_head/x, max_input_length, x] // x = 16/sizeof(T) (eg, packed 128 bit floats)
+    self_value_cache : [layers, batch, num_heads, seq, size_per_head]
     cross_key_cache: "
     cross_value_cache: "
     */
     {
         Tensor encoder_outputs = input_tensors.at("encoder_outputs");
         Tensor input_ids = input_tensors.at("input_ids");
-        int n = encoder_outputs.shape[0] ;
+        int n = input_ids.size() ;
+        int input_length = input_tensors.at("input_ids").shape[1];
+
         if(!is_buffers_allocated_) allocateBuffer(n, encoder_outputs.shape[1]);
         uint32_t batch = input_ids.shape[0];
-        uint32_t beam = input_ids.shape[1];
-        uint32_t cache_lda = ((uint32_t) n) * config_.max_target_positions * config_.d_model;
-        uint32_t cross_cache_lda = ((uint32_t) n) * encoder_outputs.shape[1] * config_.d_model;
-        uint32_t *sequence_lengths = input_tensors.at("sequence_lengths").getPtr<uint32_t>();
+        uint32_t cache_lda = ((uint32_t) n) * config_.d_model;
+        uint32_t cross_cache_lda = batch * encoder_outputs.shape[1] * config_.d_model;
+        // uint32_t *sequence_lengths = input_tensors.at("sequence_lengths").getPtr<uint32_t>();
 
         // std::cout << "validating decoder inputs: \n";
         // for(uint32_t i = 0; i < batch * beam; i ++)
@@ -142,22 +143,23 @@ namespace fastertransformer
         // printMatrix(residual_buf, batch * beam, 10, config_.d_model, true);
         // std::cout << "press enter to continue. \n";
         // while(std::cin.get() != '\n');
-        // invokeEmbed(residual_buf, input_tensors.at("input_ids").getPtr<int>(), weight.pos_embed, n, config_.d_model, stream_); 
+        invokeEmbed(residual_buf, input_tensors.at("input_ids").getPtr<int>(), weight.token_embed, n, config_.d_model, stream_); 
+        invokeBatchPosEmbed(residual_buf, weight.pos_embed, batch, input_length, config_.d_model, stream_);
         // invokeDecoderPosEmbed(residual_buf, weight.pos_embed, n, *input_tensors.at("step").getPtr<uint32_t>() - 1, config_.d_model, stream_);
-        invokeEmbeddingLookupPosEncodingPadCount(
-            residual_buf,
-            weight.token_embed,
-            weight.pos_embed,
-            input_tensors.at("input_ids").getPtr<int>(),
-            input_tensors.at("padding_count").getPtr<int>(),
-            config_.vocab_size,
-            config_.d_model,
-            1.0f,
-            *input_tensors.getPtr<int>("step") - 1,
-            config_.d_model,
-            0,
-            stream_
-        );
+        // invokeEmbeddingLookupPosEncodingPadCount(
+            // residual_buf,
+            // weight.token_embed,
+            // weight.pos_embed,
+            // input_tensors.at("input_ids").getPtr<int>(),
+            // input_tensors.at("padding_count").getPtr<int>(),
+            // config_.vocab_size,
+            // config_.d_model,
+            // 1.0f,
+            // *input_tensors.getPtr<int>("step") - 1,
+            // config_.d_model,
+            // 0,
+            // stream_
+        // );
         // std::cout << "validating post-pos-embed outputs: \n";
         // printMatrix(residual_buf, batch*beam, 10, config_.d_model, true);
         // std::cout << "press enter to continue. \n";
@@ -409,5 +411,5 @@ namespace fastertransformer
         if(is_free_buffer_after_forward_) freeBuffer();
     }
 
-    template class WhisperDecoder<float>;
+    template class WhisperPromptDecoder<float>;
 }

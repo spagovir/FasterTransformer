@@ -1,4 +1,6 @@
 # %%
+print(None)
+# %%
 import torch as th
 import einops as e
 
@@ -10,8 +12,16 @@ from utils import WhisperForConditionalGeneration
 from datasets import load_dataset
 
 processor = AutoProcessor.from_pretrained("openai/whisper-tiny.en")
-model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-tiny.en")
-
+# model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-tiny.en")
+# %%
+class PrintingWhisper(WhisperForConditionalGeneration):
+    def beam_search(self, *args, **kwargs):
+        print('beam_search')
+        return WhisperForConditionalGeneration.beam_search(self, *args, **kwargs)
+    def forward(self, *args, **kwargs):
+        print('use cache' if kwargs['past_key_values'] else "no cache")
+        return WhisperForConditionalGeneration.forward(self, *args, **kwargs)
+model = PrintingWhisper.from_pretrained("openai/whisper-tiny.en")
 
 # %%
 ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
@@ -98,18 +108,26 @@ for layer in model.base_model.decoder.layers:
          [
              layer.self_attn_layer_norm.weight,
              layer.self_attn_layer_norm.bias,
-             layer.self_attn.k_proj.weight.T.contiguous(),
-             th.empty_like(layer.self_attn.q_proj.bias),
-             layer.self_attn.q_proj.weight.T.contiguous(),
-             layer.self_attn.q_proj.bias,
-             layer.self_attn.v_proj.weight.T.contiguous(),
-             layer.self_attn.v_proj.bias,
+             # layer.self_attn.k_proj.weight.T.contiguous(),
+             # th.zeros_like(layer.self_attn.q_proj.bias),
+             th.cat([
+                 layer.self_attn.q_proj.weight,
+                 layer.self_attn.k_proj.weight,
+                 layer.self_attn.v_proj.weight
+                 ],0).T.contiguous(),
+             th.cat( [ layer.self_attn.q_proj.bias
+                     , th.zeros_like(layer.self_attn.q_proj.bias)
+                     , layer.self_attn.v_proj.bias
+                     ]
+                   , 0),
+             # layer.self_attn.v_proj.weight.T.contiguous(),
+             # layer.self_attn.v_proj.bias,
              layer.self_attn.out_proj.weight.T.contiguous(),
              layer.self_attn.out_proj.bias,
              layer.encoder_attn_layer_norm.weight,
              layer.encoder_attn_layer_norm.bias,
              layer.encoder_attn.k_proj.weight.T.contiguous(),
-             th.empty_like(layer.encoder_attn.q_proj.bias),
+             th.zeros_like(layer.encoder_attn.q_proj.bias),
              layer.encoder_attn.q_proj.weight.T.contiguous(),
              layer.encoder_attn.q_proj.bias,
              layer.encoder_attn.v_proj.weight.T.contiguous(),
@@ -118,14 +136,19 @@ for layer in model.base_model.decoder.layers:
              layer.encoder_attn.out_proj.bias,
              layer.final_layer_norm.weight,
              layer.final_layer_norm.bias,
-             layer.fc1.weight,
+             layer.fc1.weight.T.contiguous(),
              layer.fc1.bias,
-             layer.fc2.weight,
+             layer.fc2.weight.T.contiguous(),
              layer.fc2.bias
          ]]
+decoder_weights += [weight.to("cuda") for weight in [model.base_model.decoder.layer_norm.weight, model.base_model.decoder.layer_norm.bias]]
 # %%
 ft_whisper_decoder = th.classes.FasterTransformer.FTWhisperDecoder(decoder_weights)
 # %%
+print(f"hf logits: {model.base_model.decoder.forward(encoder_hidden_states = hfret, input_ids = th.zeros((1,1), dtype = th.int32))[0]}")
+
+# %%
 out_seq = 2048
-ft_whisper_decoder.forward(ret, th.empty([1,out_seq],dtype=th.int, device="cuda"), th.tensor([0],dtype=th.int, device="cuda" ), 0.0)
+decoder_ret = ft_whisper_decoder.forward(ret, th.empty([1,out_seq],dtype=th.int, device="cuda"), th.tensor([0],dtype=th.int, device="cuda" ), 0.0)
+# %%
 # %%

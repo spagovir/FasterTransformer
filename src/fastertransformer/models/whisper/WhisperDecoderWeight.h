@@ -7,5 +7,6 @@ struct WhisperDecoderWeight {
     T* token_embed; //vector of length vocab_size
     T* pos_embed; //vector of length max_seq_len
     std::vector<WhisperDecoderLayerWeight<T>> layers;
+    LayerNormWeight<T> ln;
 };
 }

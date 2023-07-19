@@ -160,7 +160,7 @@ void OnlineBeamSearchLayer<T>::invokeSoftMax(TensorMap* output_tensors, TensorMa
                       length_penalty,
                       stream_);
     sync_check_cuda_error();
-
+    std::cout << "about to invoke update\n";
     invokeUpdate(output_tensors->at("finished").getPtr<bool>(),
                  output_tensors->at("parent_ids").getPtrWithOffset<int>(id_offset),
                  output_tensors->at("sequence_length").getPtr<int>(),
@@ -173,6 +173,7 @@ void OnlineBeamSearchLayer<T>::invokeSoftMax(TensorMap* output_tensors, TensorMa
                  input_tensors->at("end_id").getPtr<const int>(),
                  stream_);
     sync_check_cuda_error();
+    std::cout << "finished update \n";
 }
 
 template<typename T>

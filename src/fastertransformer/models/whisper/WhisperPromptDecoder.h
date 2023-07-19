@@ -9,10 +9,10 @@
 namespace fastertransformer
 {
     template<typename T> 
-    class WhisperDecoder : public BaseLayer
+    class WhisperPromptDecoder : public BaseLayer
     {
         WhisperConfig config_;
-        DecoderSelfAttentionLayer<T> self_attn_;
+        DecoderCrossAttentionLayer<T> self_attn_;
         DecoderCrossAttentionLayer<T> cross_attn_;
         GeluFfnLayer<T> ffn;
         T* residual_buf;
@@ -22,7 +22,7 @@ namespace fastertransformer
         bool is_buffers_allocated_;
         public:
         void allocateBuffer(uint32_t n, uint32_t encoder_seq);
-        WhisperDecoder(
+        WhisperPromptDecoder(
             WhisperConfig config,
             WhisperCudaContext *context,
             bool is_free_after_forward

@@ -55,12 +55,12 @@ namespace torch_ext
             layer.pre_self_attn_layernorm.gamma = reader.read();
             layer.pre_self_attn_layernorm.beta = reader.read();
 
-            layer.self_attn.key_weight.kernel = reader.read();
-            layer.self_attn.key_weight.bias = reader.read();
+            // layer.self_attn.key_weight.kernel = reader.read();
+            // layer.self_attn.key_weight.bias = reader.read();
             layer.self_attn.query_weight.kernel = reader.read();
             layer.self_attn.query_weight.bias = reader.read();
-            layer.self_attn.value_weight.kernel = reader.read();
-            layer.self_attn.value_weight.bias = reader.read();
+            // layer.self_attn.value_weight.kernel = reader.read();
+            // layer.self_attn.value_weight.bias = reader.read();
             layer.self_attn.attention_output_weight.kernel = reader.read();
             layer.self_attn.attention_output_weight.bias = reader.read();
 
@@ -86,6 +86,8 @@ namespace torch_ext
 
             weight_.layers.push_back(layer);
         }
+        weight_.ln.gamma = reader.read();
+        weight_.ln.beta = reader.read();
 
         context->cublas_wrapper->setFP32GemmConfig();
     }

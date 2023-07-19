@@ -1,10 +1,11 @@
 #include "src/fastertransformer/models/whisper/WhisperContextDecoder.h"
 #include "src/fastertransformer/models/whisper/WhisperConfig.h"
 #include "src/fastertransformer/models/whisper/WhisperCudaContext.h"
-#include "src/fastertransformer/th_op/th_utils.h"
 #include "src/fastertransformer/utils/Tensor.h"
 #include "src/fastertransformer/models/whisper/WhisperKernels.h"
 #include "src/fastertransformer/kernels/decoding_kernels.h"
+#include "src/fastertransformer/utils/cuda_utils.h"
+#include "src/fastertransformer/kernels/gpt_kernels.h"
 #include <cfloat>
 #include <iostream>
 
@@ -30,26 +31,26 @@ namespace fastertransformer
         // note: top_k and temperature only used if beam_width == null or 1;
         // if top_k is set temperature must also be set (and vice versa)
     output_tensors:
-        "output_ids" : uint32_t[batch, beam, max_target_positions]
+        "output_ids" : uint32_t[batch, max_target_positions]
         NOT_SUPPORTED "output_logprobs" : [batch, beam, max_target_positions, vocab_size]
     */
     {
         uint32_t batch = input_tensors.at("encoder_outputs").shape[0];
-        std::cout << "encoder_outputs shape";
         uint32_t seq = input_tensors.at("encoder_outputs").shape[1];
         uint32_t beam = input_tensors.isExist("beam_width")? input_tensors.at("beam_width").getPtr<uint32_t>()[0] : 1;
         uint32_t out_seq = output_tensors.at("output_ids").shape[1];
         uint32_t output_beams_lda = batch * beam;
 
         if(!is_buffers_allocated_) allocateBuffer(batch,beam, seq, out_seq);
+        sync_check_cuda_error();
         // repeat encoder output for each beam
         Tensor encoderOutputTensor = input_tensors.at("encoder_outputs");
-        invokeRepeat<T>(decoder_input_buf, encoderOutputTensor, 1, config_.max_beams, context_->stream_);
+        invokeRepeat<T>(decoder_input_buf, encoderOutputTensor, 1, beam, context_->stream_);
         // output_id_beams : seq x batch x beam
         // initialize output_id_beams from inputs:
-        invokeCopyTransposeRepeat<uint32_t>(output_id_beams, input_tensors.at("decoder_inputs").getPtr<uint32_t>(), batch, out_seq, beam, context_->stream_);
+        invokeCopyTransposeRepeat<uint32_t>(output_id_beams, input_tensors.at("decoder_inputs").getPtr<uint32_t>(), input_tensors.at("input_lengths").getPtr<int>(), batch, out_seq, beam, context_->stream_);
         // initialize buffers used in beam search
-        invokeDecodingInitialize<float>(finished, sequence_lengths, nullptr, cumulative_log_probs, nullptr, batch, beam, out_seq, context_->stream_);
+        invokeDecodingInitialize<float>(finished, sequence_lengths, nullptr, cumulative_log_probs, nullptr, batch, beam, 0, context_->stream_);
         // setup dynamic decode
         TensorMap dynamic_decode_setup_args = 
             TensorMap(
@@ -76,8 +77,6 @@ namespace fastertransformer
             beam,
             &dynamic_decode_setup_args
         );
-        std::cout<<"before ping pong creation";
-        print_to_screen(cache_indir1, 10);
         // create ping-pong cache indirection buffer
         Tensor cache_indirs[2] = 
         {
@@ -118,8 +117,7 @@ namespace fastertransformer
                 {batch * beam},
                 cumulative_log_probs
             );
-        std::cout << "beginning main loop";
-        for(int idx = 0; idx + 1 < out_seq; idx ++)
+        for(int idx = 1; idx < out_seq; idx ++)
         {
             int src_idx = idx % 2; 
             int tgt_idx = 1 - src_idx;
@@ -201,6 +199,11 @@ namespace fastertransformer
                             "cache_indirection",
                             cache_indirs[src_idx]
                         },
+                        {   "sequence_lengths",
+                        Tensor(MEMORY_GPU,
+                        getTensorType<uint32_t>(),
+                        {beam*batch},
+                        sequence_lengths)}
                     }
                 );
             decoder.forward(decoder_outputs, decoder_inputs, decoder_weight);
@@ -236,10 +239,6 @@ namespace fastertransformer
                                     {1},
                                     &ite
                                 )
-                            },
-                            {
-                                "input_lengths",
-                                input_tensors.at("input_lengths")
                             },
                             {"src_cache_indirection", cache_indirs[src_idx]},
                             {"local_batch_size",
@@ -279,12 +278,25 @@ namespace fastertransformer
                             Tensor(MEMORY_GPU,
                             getTensorType<uint32_t>(),
                             {out_seq, batch * beam},
-                            parent_ids_buf)}
+                            parent_ids_buf)},
+                            {
+                                "sequence_length",
+                                input_tensors.at("input_lengths")
+                            },
                         }
                     );
-                print_to_screen(cache_indir1, 10);
-                sampler.forward(&dynamic_decode_output_tensors, &dynamic_decode_input_tensors);
-                std::cout << "beam search step finished\n";
+
+                // std::cout << "decoder logits: \n";
+                // print_to_screen(logits_buffer, 384);
+                // std::cout << "about to enter sampler\n";
+                // sampler.forward(&dynamic_decode_output_tensors, &dynamic_decode_input_tensors);
+                // std::cout << "beam search outputs: \n";
+                // std::cout << "output_ids: \n";
+                // print_to_screen(output_id_beams + idx * output_beams_lda, 5);
+                // std::cout << "finished: \n";
+                // print_to_screen(finished, 5);
+                // std::cout << "cum_log_probs: \n";
+                // print_to_screen(cumulative_log_probs, 5);
             }
             else {
                 // Top_k currently not supported. 
@@ -302,16 +314,17 @@ namespace fastertransformer
     {
         decoder.allocateBuffer(batch * beam, seq);
         IAllocator *allocator = context_->iallocator;
+        padding_count = (int*) allocator->malloc(sizeof(int) * batch * beam);
         parent_ids_buf = (uint32_t*) allocator->malloc(sizeof(uint32_t) * batch * beam * out_seq);
-        decoder_input_buf = (T*) allocator->malloc(sizeof(T) * batch * beam * seq);
+        decoder_input_buf = (T*) allocator->malloc(sizeof(T) * batch * beam * seq * config_.d_model);
         cumulative_log_probs = (T*) allocator->malloc(sizeof(float) * batch * beam);
         self_key_cache = (T*) allocator->malloc(sizeof(T) * batch * beam * out_seq * config_.d_model * config_.decoder_layers);
         self_value_cache = (T*) allocator->malloc(sizeof(T) * batch * beam * out_seq * config_.d_model * config_.decoder_layers);
         cross_key_cache = (T*) allocator->malloc(sizeof(T) * batch * beam * seq * config_.d_model * config_.decoder_layers);
         cross_value_cache = (T*) allocator->malloc(sizeof(T) * batch * beam * seq * config_.d_model * config_.decoder_layers);
-        cache_indir1 = (uint32_t*) allocator->malloc(sizeof(uint32_t) * batch * beam * out_seq * 2);
+        cache_indir1 = (uint32_t*) allocator->malloc(sizeof(uint32_t) * batch * beam * out_seq * 2, true);
         cache_indir2 = cache_indir1 + batch * beam * out_seq;
-        logits_buffer = (T*) allocator->malloc(sizeof(T) * batch * beam);
+        logits_buffer = (T*) allocator->malloc(sizeof(T) * batch * beam * config_.vocab_size);
         sequence_lengths = (int*) allocator->malloc(sizeof(int) * batch * beam); 
         finished = (bool*) allocator->malloc(sizeof(bool) * batch * beam);
         output_id_beams = (uint32_t*) allocator->malloc(sizeof(uint32_t) * batch * beam * out_seq);
@@ -322,6 +335,7 @@ namespace fastertransformer
     {
         decoder.freeBuffer();
         IAllocator *allocator = context_->iallocator;
+        allocator->free((void**) &padding_count);
         allocator->free((void**) &decoder_input_buf);
         allocator->free((void**) &cumulative_log_probs);
         allocator->free((void**) & self_key_cache);

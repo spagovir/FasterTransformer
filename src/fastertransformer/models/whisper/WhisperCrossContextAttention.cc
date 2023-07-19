@@ -1,3 +1,4 @@
+
 /*
  * Copyright (c) 2019-2023, NVIDIA CORPORATION.  All rights reserved.
  *
@@ -61,9 +62,10 @@ __global__ void cross_attention_kernel(T*          query_buf,
                                        T*          context_buf,
                                        const bool* finished,
                                        int         batch_size,
+                                       int         target_seq,
                                        int         head_num,
                                        int         size_per_head,
-                                       int         step,
+                                       // int         step,
                                        const int   seq_len,
                                        const T     scalar,
                                        const int*  ia3_tasks,
@@ -225,6 +227,7 @@ __global__ void cross_attention_kernel_opt(T* __restrict query_buf,
     const bool do_ia3   = step == 1 && ia3_tasks != nullptr;
     const int  ia3_task = do_ia3 ? ia3_tasks[bid] : 0;
 
+    //  !!!!!!!!!!!!!!!!!!!!! We need to transpose here first
     query_buf   = &query_buf[qkv_id];
     K_bias      = &K_bias[qkv_bias_id];
     key_cache   = &key_cache[key_value_id];

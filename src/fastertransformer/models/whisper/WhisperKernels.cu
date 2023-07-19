@@ -89,7 +89,7 @@ out[n, d_model]
 __global__ void embed(float* out, int* in, float* weight, int n, int d_model)
 {
     if(blockIdx.x < n && threadIdx.x < d_model)
-        out[blockIdx.x * d_model + threadIdx.x] = weight[in[blockIdx.x]*d_model + threadIdx.x];
+        out[blockIdx.x * d_model + threadIdx.x] += weight[in[blockIdx.x]*d_model + threadIdx.x];
 }
 
 /*
@@ -104,13 +104,27 @@ void invokeEmbed(float* out, int* in, float* weight, int n, int d_model, cudaStr
 
 }
 
+__global__ void decoderPosEmbed(float* out, float* weight, int step, int d_model)
+{
+    if(blockIdx.x < gridDim.x && threadIdx.x < d_model)
+        out[blockIdx.x * d_model + threadIdx.x] += weight[step * d_model + threadIdx.x];
+}
+
+void invokeDecoderPosEmbed(float* out, float* weight, int n, int step, int d_model, cudaStream_t stream)
+{
+    dim3 block,grid;
+    block.x = d_model;
+    grid.x = n;
+    decoderPosEmbed<<<grid,block,0,stream>>>(out, weight, step, d_model);
+}
+
 template<typename T>
 __global__ void repeat(T* out, T* in, int len, int m, int n, int k)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if(idx < len)
     {
-        out[idx] = in[idx/(n *k) + (idx % k)];
+        out[idx] = in[(idx/(n*k)) * k + (idx % k)];
     }
 }
 
@@ -123,7 +137,6 @@ void invokeRepeat(T* out, Tensor in, uint32_t axis, uint32_t n, cudaStream_t str
     int k = 1;
     for(uint32_t i = axis; i < in.shape.size(); i++)
         k *= in.shape[i];
-    std::cout << "repeat shape";
     int len = n * m * k; 
     dim3 grid, block;
     block.x = std::min<int>(len, 1024);
@@ -219,25 +232,25 @@ __global__ void oddEvenSort(uint32_t* values, uint32_t* out_indices, int n)
 Copies a vector of dimensions [a,b] to one of [b,a,r];
 */
 template<typename T> 
-__global__ void copyTransposeRepeat(T* out, T* in, int a, int b, int r, int n)
+__global__ void copyTransposeRepeat(T* out, T* in, int* lengths, int a, int b, int r, int n)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if(idx < n)
     {
         int aIdx = (idx / r) % a;
         int bIdx = idx / r / a; 
-        out[idx] = in[aIdx * b + bIdx];
+        if(bIdx < in[aIdx]) out[idx] = in[aIdx * b + bIdx];
     }
 }
 
 template<typename T>
-void invokeCopyTransposeRepeat(T* out, T* in, int a, int b, int r, cudaStream_t stream)
+void invokeCopyTransposeRepeat(T* out, T* in, int* lengths, int a, int b, int r, cudaStream_t stream)
 {
     int n = a * b * r;
     dim3 block, grid;
     block.x = std::min<int>(n, 1024);
     grid.x = (n-1)/1024 + 1;
-    copyTransposeRepeat<T><<<grid,block,0,stream>>>(out, in, a, b, r, n);
+    copyTransposeRepeat<T><<<grid,block,0,stream>>>(out, in, lengths, a, b, r, n);
 }
 
 /*
@@ -295,12 +308,34 @@ void invokeGenericMemset(T *out, T val, int n, cudaStream_t stream)
     genericMemset<T><<<grid,block,0,stream>>>(out, val,n);
 }
 
+template<typename T> 
+__global__ void batchPosEmbed(T *out, T *weight, int seq, int n, int d_model)
+{
+    if(threadIdx.x < d_model && blockIdx.x < n)
+    {
+        int seqIdx = blockIdx.x % seq;
+        out[blockIdx.x * d_model + threadIdx.x] += weight[seqIdx * d_model + threadIdx.x];
+    }
+}
+
+template<typename T> 
+void invokeBatchPosEmbed(T *out, T *weight, int batch, int seq, int d_model, cudaStream_t stream)
+{
+    int n = batch * seq;
+    dim3 block,grid;
+    block.x = d_model;
+    grid.x = n; 
+    batchPosEmbed<<<grid,block,0,stream>>>(out, weight, seq, n, d_model);
+
+}
 template void invokeGenericMemset<uint32_t>(uint32_t *out, uint32_t val, int n, cudaStream_t stream);
 
-template void invokeRepeat<float>(float* out, Tensor in, uint32_t axis, uint32_t m, cudaStream_t stream);
+template void invokeRepeat<float>(float* out, Tensor in, uint32_t axis, uint32_t n, cudaStream_t stream);
 
 template void invokeCopyTransposeRepeat<uint32_t>(uint32_t* out, uint32_t* in, int a, int b, int r, cudaStream_t stream);
 
 template void invokeCopyTransposeMaxBy<uint32_t,float>(uint32_t *out, uint32_t *in, float *by, int a, int b, int r, cudaStream_t stream);
+
+template void invokeBatchPosEmbed<float>(float *out, float *weight, int batch, int seq, int d_model, cudaStream_t stream);
 
 }
