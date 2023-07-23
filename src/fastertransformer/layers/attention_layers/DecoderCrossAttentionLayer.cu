@@ -23,7 +23,7 @@
 #endif
 
 #include "src/fastertransformer/kernels/decoder_masked_multihead_attention.h"
-#include "src/fastertransformer/kernels/decoder_
+#include "src/fastertransformer/kernels/decoder_masked_multihead_attention_utils.h"
 #include "src/fastertransformer/kernels/reduce_kernel_utils.cuh"
 #include "src/fastertransformer/layers/attention_layers/DecoderCrossAttentionLayer.h"
 #include "src/fastertransformer/utils/cuda_type_utils.cuh"
@@ -882,6 +882,7 @@ void DecoderCrossAttentionLayer<T>::forward(TensorMap*                output_ten
     //      cross_attentions [batch_size, head_num, max_decoder_seq_len, mem_max_seq_len] optional float*
     FT_LOG_DEBUG("%s", __PRETTY_FUNCTION__);
     allocateBuffer(input_tensors->at("input_query").shape[0], input_tensors->at("encoder_output").shape[1]);
+
     const T*    attention_input        = input_tensors->getPtr<T>("input_query");
     Tensor      encoder_output_tensor  = input_tensors->at("encoder_output");
     const int*  memory_sequence_length = input_tensors->getPtr<int>("encoder_sequence_length");
@@ -983,6 +984,7 @@ void DecoderCrossAttentionLayer<T>::forward(TensorMap*                output_ten
         output_attention_param.cross_attention_out        = output_tensors->at("cross_attentions").getPtr<float>();
         output_attention_param.is_return_cross_attentions = true;
     }
+
     cross_attention_dispatch<T>(q_buf_,
                                 attention_weights->query_weight.bias,
                                 key_mem_cache,

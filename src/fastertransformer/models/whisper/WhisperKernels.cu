@@ -232,7 +232,7 @@ __global__ void oddEvenSort(uint32_t* values, uint32_t* out_indices, int n)
 Copies a vector of dimensions [a,b] to one of [b,a,r];
 */
 template<typename T> 
-__global__ void copyTransposeRepeat(T* out, T* in, int* lengths, int a, int b, int r, int n)
+__global__ void copyTransposeRepeat(T* out, T* in, int a, int b, int r, int n)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if(idx < n)
@@ -244,13 +244,13 @@ __global__ void copyTransposeRepeat(T* out, T* in, int* lengths, int a, int b, i
 }
 
 template<typename T>
-void invokeCopyTransposeRepeat(T* out, T* in, int* lengths, int a, int b, int r, cudaStream_t stream)
+void invokeCopyTransposeRepeat(T* out, T* in, int a, int b, int r, cudaStream_t stream)
 {
     int n = a * b * r;
     dim3 block, grid;
     block.x = std::min<int>(n, 1024);
     grid.x = (n-1)/1024 + 1;
-    copyTransposeRepeat<T><<<grid,block,0,stream>>>(out, in, lengths, a, b, r, n);
+    copyTransposeRepeat<T><<<grid,block,0,stream>>>(out, in, a, b, r, n);
 }
 
 /*
@@ -327,6 +327,22 @@ void invokeBatchPosEmbed(T *out, T *weight, int batch, int seq, int d_model, cud
     grid.x = n; 
     batchPosEmbed<<<grid,block,0,stream>>>(out, weight, seq, n, d_model);
 
+}
+
+__global__ void stepSequenceLength(int *out, int n)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if(idx < n)
+    {
+        out[idx]++;
+    }
+}
+void invokeStepSequenceLength(int *out, int n, cudaStream_t stream)
+{
+    dim3 grid,block;
+    block.x = std::min(n, 1024);
+    grid.x = (n+1)/1024 - 1; 
+    stepSequenceLength<<<grid,block,0,stream>>>(out, n);
 }
 template void invokeGenericMemset<uint32_t>(uint32_t *out, uint32_t val, int n, cudaStream_t stream);
 

@@ -40,6 +40,7 @@ namespace fastertransformer
         uint32_t beam = input_tensors.isExist("beam_width")? input_tensors.at("beam_width").getPtr<uint32_t>()[0] : 1;
         uint32_t out_seq = output_tensors.at("output_ids").shape[1];
         uint32_t output_beams_lda = batch * beam;
+        uint32_t max_input_length = input_tensors.at("decoder_inputs").shape[1];
 
         if(!is_buffers_allocated_) allocateBuffer(batch,beam, seq, out_seq);
         sync_check_cuda_error();
@@ -207,100 +208,106 @@ namespace fastertransformer
                     }
                 );
             decoder.forward(decoder_outputs, decoder_inputs, decoder_weight);
-            if(beam>1)
+            if(idx<max_input_length)
             {
-                uint32_t ite = 0;
-                TensorMap dynamic_decode_input_tensors =
-                    TensorMap(
-                        {
-                            {
-                                "logits",
-                                decoder_output_logits
-                            },
-                            {"step", step},
-                            {
-                                "max_input_length",
-                                Tensor(
-                                    MEMORY_CPU,
-                                    getTensorType<uint32_t>(),
-                                    {1},
-                                    &out_seq
-                                )
-                            },
-                            {
-                                "end_id",
-                                input_tensors.at("end_id")
-                            },
-                            {
-                                "ite",
-                                Tensor(
-                                    MEMORY_CPU,
-                                    getTensorType<uint32_t>(),
-                                    {1},
-                                    &ite
-                                )
-                            },
-                            {"src_cache_indirection", cache_indirs[src_idx]},
-                            {"local_batch_size",
-                            Tensor(
-                                MEMORY_CPU,
-                                getTensorType<uint32_t>(),
-                                {1},
-                                &batch
-                            )}
-                        }
-                    );
-                TensorMap dynamic_decode_output_tensors =
-                    TensorMap(
-                        {
-                            {
-                                "output_ids",
-                                Tensor(
-                                    MEMORY_GPU,
-                                    getTensorType<uint32_t>(),
-                                    {out_seq, batch, beam},
-                                    output_id_beams
-                                )
-                            },
-                            {
-                                "finished",
-                                finished_tensor
-                            },
-                            {
-                                "cum_log_probs",
-                                cum_log_probs_tensor
-                            },
-                            {
-                                "tgt_cache_indirection",
-                                cache_indirs[tgt_idx]
-                            },
-                            {"parent_ids",
-                            Tensor(MEMORY_GPU,
-                            getTensorType<uint32_t>(),
-                            {out_seq, batch * beam},
-                            parent_ids_buf)},
-                            {
-                                "sequence_length",
-                                input_tensors.at("input_lengths")
-                            },
-                        }
-                    );
-
-                // std::cout << "decoder logits: \n";
-                // print_to_screen(logits_buffer, 384);
-                // std::cout << "about to enter sampler\n";
-                // sampler.forward(&dynamic_decode_output_tensors, &dynamic_decode_input_tensors);
-                // std::cout << "beam search outputs: \n";
-                // std::cout << "output_ids: \n";
-                // print_to_screen(output_id_beams + idx * output_beams_lda, 5);
-                // std::cout << "finished: \n";
-                // print_to_screen(finished, 5);
-                // std::cout << "cum_log_probs: \n";
-                // print_to_screen(cumulative_log_probs, 5);
+                invokeStepSequenceLength(sequence_lengths, beam * batch, context_->stream_);
             }
-            else {
-                // Top_k currently not supported. 
-                assert(false);
+            else{
+                if(beam>1)
+                {
+                    uint32_t ite = 0;
+                    TensorMap dynamic_decode_input_tensors =
+                        TensorMap(
+                            {
+                                {
+                                    "logits",
+                                    decoder_output_logits
+                                },
+                                {"step", step},
+                                {
+                                    "max_input_length",
+                                    Tensor(
+                                        MEMORY_CPU,
+                                        getTensorType<uint32_t>(),
+                                        {1},
+                                        &out_seq
+                                    )
+                                },
+                                {
+                                    "end_id",
+                                    input_tensors.at("end_id")
+                                },
+                                {
+                                    "ite",
+                                    Tensor(
+                                        MEMORY_CPU,
+                                        getTensorType<uint32_t>(),
+                                        {1},
+                                        &ite
+                                    )
+                                },
+                                {"src_cache_indirection", cache_indirs[src_idx]},
+                                {"local_batch_size",
+                                Tensor(
+                                    MEMORY_CPU,
+                                    getTensorType<uint32_t>(),
+                                    {1},
+                                    &batch
+                                )}
+                            }
+                        );
+                    TensorMap dynamic_decode_output_tensors =
+                        TensorMap(
+                            {
+                                {
+                                    "output_ids",
+                                    Tensor(
+                                        MEMORY_GPU,
+                                        getTensorType<uint32_t>(),
+                                        {out_seq, batch, beam},
+                                        output_id_beams
+                                    )
+                                },
+                                {
+                                    "finished",
+                                    finished_tensor
+                                },
+                                {
+                                    "cum_log_probs",
+                                    cum_log_probs_tensor
+                                },
+                                {
+                                    "tgt_cache_indirection",
+                                    cache_indirs[tgt_idx]
+                                },
+                                {"parent_ids",
+                                Tensor(MEMORY_GPU,
+                                getTensorType<uint32_t>(),
+                                {out_seq, batch * beam},
+                                parent_ids_buf)},
+                                {
+                                    "sequence_length",
+                                    input_tensors.at("input_lengths")
+                                },
+                            }
+                        );
+
+                    // std::cout << "decoder logits: \n";
+                    // print_to_screen(logits_buffer, 384);
+                    // std::cout << "about to enter sampler\n";
+                    // sampler.forward(&dynamic_decode_output_tensors, &dynamic_decode_input_tensors);
+                    // std::cout << "beam search outputs: \n";
+                    // std::cout << "output_ids: \n";
+                    // print_to_screen(output_id_beams + idx * output_beams_lda, 5);
+                    // std::cout << "finished: \n";
+                    // print_to_screen(finished, 5);
+                    // std::cout << "cum_log_probs: \n";
+                    // print_to_screen(cumulative_log_probs, 5);
+                }
+                else {
+                    // Top_k currently not supported. 
+                    assert(false);
+                }
             }
         }
         invokeCopyTransposeMaxBy<uint32_t,float>(output_tensors.at("output_ids").getPtr<uint32_t>(), output_id_beams, cumulative_log_probs, out_seq, batch, beam, context_->stream_);

@@ -17,5 +17,6 @@ namespace fastertransformer {
     void invokeGenericMemset(T *out, T val, int n, cudaStream_t stream);
     void invokeDecoderPosEmbed(float* out, float* weight, int n, int step, int d_model, cudaStream_t stream);
     template<typename T> 
-    void invokeBatchPosEmbed(T* out, T* weight, int batch, int seq, int d_model, cudaStream_t stream)
+    void invokeBatchPosEmbed(T* out, T* weight, int batch, int seq, int d_model, cudaStream_t stream);
+    void invokeStepSequenceLength(int* out, int n, cudaStream_t stream);
 }
