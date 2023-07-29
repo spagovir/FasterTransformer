@@ -30,6 +30,7 @@ inputs = processor(ds[0]["audio"]["array"], return_tensors="pt")
 
 input_features = inputs.input_features
 
+
 generated_ids = model.generate(inputs=input_features)
 
 transcription = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
@@ -148,7 +149,8 @@ ft_whisper_decoder = th.classes.FasterTransformer.FTWhisperDecoder(decoder_weigh
 print(f"hf logits: {model.base_model.decoder.forward(encoder_hidden_states = hfret, input_ids = th.zeros((1,1), dtype = th.int32))[0]}")
 
 # %%
-out_seq = 2048
-decoder_ret = ft_whisper_decoder.forward(ret, th.empty([1,out_seq],dtype=th.int, device="cuda"), th.tensor([0],dtype=th.int, device="cuda" ), 0.0)
+out_seq = 448
+decoder_ret = ft_whisper_decoder.forward(ret, th.tensor(model.generation_config.forced_decoder_ids, dtype = th.int32).to('cuda'), th.tensor([2],dtype=th.int, device="cuda" ), 0.0)
 # %%
 # %%
+

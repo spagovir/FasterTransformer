@@ -237,9 +237,9 @@ __global__ void copyTransposeRepeat(T* out, T* in, int a, int b, int r, int n)
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if(idx < n)
     {
-        int aIdx = (idx / r) % a;
+        int aIdx = idx % a;
         int bIdx = idx / r / a; 
-        if(bIdx < in[aIdx]) out[idx] = in[aIdx * b + bIdx];
+        out[idx] = in[aIdx * b + bIdx];
     }
 }
 
@@ -334,15 +334,29 @@ __global__ void stepSequenceLength(int *out, int n)
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if(idx < n)
     {
-        out[idx]++;
+        out[idx] += 1;
     }
 }
 void invokeStepSequenceLength(int *out, int n, cudaStream_t stream)
 {
     dim3 grid,block;
     block.x = std::min(n, 1024);
-    grid.x = (n+1)/1024 - 1; 
+    grid.x = (n-1)/1024 + 1; 
     stepSequenceLength<<<grid,block,0,stream>>>(out, n);
+}
+
+__global__ void paddingInitialize(int *padding_count, int *input_lengths, int max_input_length, int n, int beam)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if(idx < n) padding_count[n] = max_input_length - input_lengths[n/beam];
+}
+void invokePaddingInitialize(int *padding_count, int *input_lengths, int max_input_length, int batch, int beam, cudaStream_t stream)
+{
+    int n = batch * beam; 
+    dim3 block, grid;
+    block.x = min(1024, n);
+    grid.x = (n-1)/1024 + 1;
+    paddingInitialize<<<block, grid, 0, stream>>>(padding_count, input_lengths, max_input_length, n, beam);
 }
 template void invokeGenericMemset<uint32_t>(uint32_t *out, uint32_t val, int n, cudaStream_t stream);
 

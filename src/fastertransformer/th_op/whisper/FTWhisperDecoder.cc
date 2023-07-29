@@ -44,7 +44,8 @@ namespace torch_ext
         (   at::cuda::getCurrentCUDABlasHandle()
         ,   at::cuda::getCurrentCUDAStream()
         ,   new ft::Allocator<ft::AllocatorType::TH>()
-        );   
+        );  
+        end_id = config.eos_token_id;
         decoder = new ft::WhisperContextDecoder<float>(context, config,true);
         VectorReader<float> reader(&weights);
         weight_.token_embed = reader.read();
@@ -130,7 +131,10 @@ namespace torch_ext
                         {batch},
                         end_ids
                     )
-                }
+                },
+                {"decoder_input_lengths",
+                convert_tensor<uint32_t>(input_lengths)}
+
             }
         );
 
@@ -145,12 +149,11 @@ namespace torch_ext
         ft::TensorMap decoder_output_tensors(
             {
                 {"output_ids",
-                convert_tensor<uint32_t>(output_ids)}
-            }
+                convert_tensor<uint32_t>(output_ids)}            }
         );
-        std::cout<<"begin forward";
+        // std::cout<<"begin forward";
         decoder->forward(decoder_output_tensors, decoder_inputs, weight_);
-        std::cout<<"end forward";
+        // std::cout<<"end forward";
         context->iallocator->free((void**) &end_ids);
         return output_ids;
     }
