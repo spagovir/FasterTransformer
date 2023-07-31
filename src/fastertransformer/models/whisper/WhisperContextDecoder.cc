@@ -195,8 +195,8 @@ namespace fastertransformer
                             Tensor(
                                 MEMORY_GPU,
                                 getTensorType<uint32_t>(),
-                                {batch, beam},
-                                output_id_beams + (idx-1) * output_beams_lda
+                                {out_seq, batch, beam},
+                                output_id_beams //  + (idx-1) * output_beams_lda
                             )
                         },
                         {
@@ -220,21 +220,20 @@ namespace fastertransformer
                     }
                 );
             decoder.forward(decoder_outputs, decoder_inputs, decoder_weight);
-            std::cout << "pre-sampler (" << idx << "): ";
-            print_to_screen(finished, batch * beam);
-            print_to_screen(logits_buffer, 10);
+            // std::cout << "logits (" << idx << "): ";
+            // print_to_screen(finished, batch * beam);
             // std::cout << "logits: \n";
-            // printMatrix(logits_buffer, beam * batch, 10, config_.d_model, true);
+            // printMatrix(logits_buffer, beam * batch, 10, config_.vocab_size, true);
             // while(std::cin.get() != '\n');
             if(idx<max_input_length)
             {
-                std::cout << "no beam search; \n";
+                // std::cout << "no beam search; \n";
                 invokeStepSequenceLength(sequence_lengths, beam * batch, context_->stream_);
             }
             else{
                 if(beam>1)
                 {
-                    std::cout << "yes beam search: \n";
+                    // std::cout << "yes beam search: \n";
                     uint32_t ite = 0;
                     TensorMap dynamic_decode_input_tensors =
                         TensorMap(
@@ -315,21 +314,21 @@ namespace fastertransformer
                             }
                         );
 
-                    std::cout << "decoder logits: \n";
-                    print_to_screen(logits_buffer, 384);
-                    std::cout << "about to enter sampler\n";
+                    // std::cout << "decoder logits: \n";
+                    // print_to_screen(logits_buffer, 384);
+                    // std::cout << "about to enter sampler\n";
 
                     sampler.forward(&dynamic_decode_output_tensors, &dynamic_decode_input_tensors);
-                    std::cout << "step: " << idx << "\n";
-                    std::cout << cudaDeviceSynchronize() << "\n";
+                    // std::cout << "step: " << idx << "\n";
+                    // std::cout << cudaDeviceSynchronize() << "\n";
 
-                    std::cout << "beam search outputs: \n";
-                    std::cout << "output_ids: \n";
-                    print_to_screen(output_id_beams + idx * output_beams_lda, 5);
-                    std::cout << "finished: \n";
-                    print_to_screen(finished, 5);
-                    std::cout << "cum_log_probs: \n";
-                    print_to_screen(cumulative_log_probs, 5);
+                    // std::cout << "beam search outputs: \n";
+                    // std::cout << "output_ids: \n";
+                    // print_to_screen(output_id_beams + idx * output_beams_lda, 5);
+                    // std::cout << "finished: \n";
+                    // print_to_screen(finished, 5);
+                    // std::cout << "cum_log_probs: \n";
+                    // print_to_screen(cumulative_log_probs, 5);
                     
                 }
                 else {
@@ -349,14 +348,14 @@ namespace fastertransformer
             // printMatrix(cache_indirs[tgt_idx].getPtr<int>(), batch * beam, out_seq, out_seq, true);
             // while(std::cin.get() != '\n');
 
-            std::cout << "post-sampler: " << idx << ": ";
-            print_to_screen(output_id_beams + idx * output_beams_lda, batch * beam);
+            // std::cout << "post-sampler: " << idx << ": ";
+            // print_to_screen(output_id_beams + idx * output_beams_lda, batch * beam);
 
         }
-        std::cout << "output beams: \n";
-        printMatrix((int*) output_id_beams, 10, batch * beam, batch*beam, true);
-        std::cout << "cum log probs: \n";
-        printMatrix(cumulative_log_probs, 1, batch * beam, batch * beam, true);
+        // std::cout << "output beams: \n";
+        // printMatrix((int*) output_id_beams, 10, batch * beam, batch*beam, true);
+        // std::cout << "cum log probs: \n";
+        // printMatrix(cumulative_log_probs, 1, batch * beam, batch * beam, true);
         invokeCopyTransposeMaxBy<uint32_t,float>(output_tensors.at("output_ids").getPtr<uint32_t>(), output_id_beams, cumulative_log_probs, out_seq, batch, beam, context_->stream_);
         if(is_free_buffer_after_forward_)
         {

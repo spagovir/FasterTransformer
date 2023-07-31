@@ -1,5 +1,4 @@
 # %%
-print(None)
 # %%
 import torch as th
 import einops as e
@@ -8,20 +7,26 @@ th.classes.load_library("/workspaces/FasterTransformer/build/lib/libth_transform
 # %%
 
 from transformers import AutoProcessor
-from utils import WhisperForConditionalGeneration
+from utils import WhisperForConditionalGeneration, WhisperDecoder
 from datasets import load_dataset
+from utils.tokenizer import Tokenizer, get_encoding
 
 processor = AutoProcessor.from_pretrained("openai/whisper-tiny.en")
-# model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-tiny.en")
+model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-tiny.en")
 # %%
+class PrintingDecoder(WhisperDecoder):
+    def forward(self,*args, **kwargs):
+        print(kwargs['input_ids'])
+        return WhisperDecoder.forward(self, *args, **kwargs)
 class PrintingWhisper(WhisperForConditionalGeneration):
     def beam_search(self, *args, **kwargs):
-        print('beam_search')
+        # print('beam_search')
         return WhisperForConditionalGeneration.beam_search(self, *args, **kwargs)
     def forward(self, *args, **kwargs):
-        print('use cache' if kwargs['past_key_values'] else "no cache")
+        self.base_model.decoder.__class__ = PrintingDecoder
+        # print('use cache' if kwargs['past_key_values'] else "no cache")
         return WhisperForConditionalGeneration.forward(self, *args, **kwargs)
-model = PrintingWhisper.from_pretrained("openai/whisper-tiny.en")
+# model = PrintingWhisper.from_pretrained("openai/whisper-tiny.en")
 
 # %%
 ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
@@ -146,11 +151,15 @@ decoder_weights += [weight.to("cuda") for weight in [model.base_model.decoder.la
 # %%
 ft_whisper_decoder = th.classes.FasterTransformer.FTWhisperDecoder(decoder_weights)
 # %%
-print(f"hf logits: {model.base_model.decoder.forward(encoder_hidden_states = hfret, input_ids = th.zeros((1,1), dtype = th.int32))[0]}")
+# print(f"hf logits: {model.base_model.decoder.forward(encoder_hidden_states = hfret, input_ids = th.zeros((1,1), dtype = th.int32))[0]}")
 
 # %%
+th.inference_mode()
 out_seq = 448
-decoder_ret = ft_whisper_decoder.forward(ret, th.tensor(model.generation_config.forced_decoder_ids, dtype = th.int32).to('cuda'), th.tensor([2],dtype=th.int, device="cuda" ), 0.0)
+tokenizer = Tokenizer(get_encoding('gpt2'))
+tokenizer.language = 'en'
+init_seq = th.tensor([[tokenizer.sot, tokenizer.no_timestamps]], dtype = th.int32, device = 'cuda')
+decoder_ret = ft_whisper_decoder.forward(ret, init_seq, th.tensor([2],dtype=th.int, device="cuda" ), 0.0)
 # %%
 # %%
 

@@ -35,7 +35,7 @@ struct WhisperConfig {
     , d_model(384)
     , max_beams(5)
     , eos_token_id(50256)
-    {}
-;   }
+    {};
+    }
 ; }
 

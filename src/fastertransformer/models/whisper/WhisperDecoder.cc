@@ -97,7 +97,7 @@ namespace fastertransformer
     /*
     input_tensors:
     encoder_outputs : [batch * beam, seq, d_model]
-    input_ids : int[batch, beam]
+    input_ids : int[out_seq, batch, beam]
     step: [1] on CPU
     cache_indirection: uint32_t[batch,beam,seq]
     sequence_lengths: uint32_t[batch * beam]
@@ -111,18 +111,16 @@ namespace fastertransformer
     cross_value_cache: "
     */
     {
-        // !!!!!!!!! delete for deubgging only.         
 
 
         Tensor encoder_outputs = input_tensors.at("encoder_outputs");
         Tensor input_ids = input_tensors.at("input_ids");
         int n = encoder_outputs.shape[0] ;
         if(!is_buffers_allocated_) allocateBuffer(n, encoder_outputs.shape[1]);
-        uint32_t batch = input_ids.shape[0];
-        uint32_t beam = input_ids.shape[1];
+        uint32_t batch = input_ids.shape[1];
+        uint32_t beam = input_ids.shape[2];
         uint32_t cache_lda = ((uint32_t) n) * config_.max_target_positions * config_.d_model;
         uint32_t cross_cache_lda = ((uint32_t) n) * encoder_outputs.shape[1] * config_.d_model;
-        uint32_t *sequence_lengths = input_tensors.at("sequence_lengths").getPtr<uint32_t>();
 
         // std::cout << "validating decoder inputs: \n";
         // for(uint32_t i = 0; i < batch * beam; i ++)
@@ -140,28 +138,8 @@ namespace fastertransformer
 
 
 
-        // invokeEmbed(residual_buf, input_tensors.at("input_ids").getPtr<int>(), weight.token_embed, n, config_.d_model, stream_); 
-
-        // std::cout << "validating post-embed outputs: \n";
-        // printMatrix(residual_buf, batch * beam, 10, config_.d_model, true);
-        // std::cout << "press enter to continue. \n";
-        // while(std::cin.get() != '\n');
-        // invokeEmbed(residual_buf, input_tensors.at("input_ids").getPtr<int>(), weight.pos_embed, n, config_.d_model, stream_); 
-        // invokeDecoderPosEmbed(residual_buf, weight.pos_embed, n, *input_tensors.at("step").getPtr<uint32_t>() - 1, config_.d_model, stream_);
-        // if(*input_tensors.at("step").getPtr<int>() == 231)
-        // {
-            // std::cout << "residual_buf: \n";
-            // print_to_screen(residual_buf, 384*5);
-            // std::cout << "input ids: \n";
-            // print_to_screen(input_tensors.at("input_ids").getPtr<int>(), 5);
-            // std::cout << "padding offset: \n";
-            // print_to_screen(input_tensors.at("padding_offsets").getPtr<int>(), 5);
-            // std::cout << "token_embed: \n";
-            // print_to_screen(weight.token_embed, 10);
-            // std::cout << "positional embed: \n";
-            // print_to_screen(weight.pos_embed, 10);
-            // std::cout << "step: " << *input_tensors.getPtr<int>("step") - 1 << ".\n";
-        // }
+        // std::cout << "decoder inputs: \n";
+        // print_to_screen(input_tensors.at("input_ids").getPtr<int>() + (*input_tensors.at("step").getPtr<int>()-1) * batch * beam, batch * beam);
         invokeEmbeddingLookupPosEncodingPadCount(
             residual_buf,
             weight.token_embed,
@@ -176,8 +154,9 @@ namespace fastertransformer
             0,
             stream_
         );
-        print_to_screen(residual_buf, 10);
-        // std::cout << "validating post-pos-embed outputs: \n";
+        // std::cout << "post embed;";
+        // print_to_screen(residual_buf, 10);
+        // std::cout << "validating embed outputs: \n";
         // printMatrix(residual_buf, batch*beam, 10, config_.d_model, true);
         // std::cout << "press enter to continue. \n";
         // while(std::cin.get() != '\n');
@@ -245,6 +224,67 @@ namespace fastertransformer
             sync_check_cuda_error();
 
 
+            invokeGeneralAddBiasResidualPreLayerNorm(
+                residual_buf,
+                lno_buf,
+                lno_buf,
+                residual_buf,
+                weight.layers[l].pre_cross_attn_layernorm.gamma,
+                weight.layers[l].pre_cross_attn_layernorm.beta,
+                weight.layers[l].self_attn.attention_output_weight.bias,
+                LAYERNORM_EPS,
+                n,
+                config_.d_model,
+                nullptr,
+                nullptr,
+                nullptr,
+                nullptr,
+                0,
+                stream_
+            );
+            sync_check_cuda_error();
+
+            // std::cout << "validating cross_attn ln output: \n";
+            // printMatrix(lno_buf, n, 10, config_.d_model, true);
+            // usr_prompt();
+
+            TensorMap cross_attn_inputs = 
+                TensorMap(
+                    {   {   "input_query"
+                        ,   Tensor  (   MEMORY_GPU
+                                    ,   getTensorType<T>()
+                                    ,   {(uint32_t) n, config_.d_model}
+                                    ,   lno_buf)}
+                    ,   {   "encoder_sequence_length"
+                        ,   Tensor  (   MEMORY_GPU
+                                    ,   getTensorType<uint32_t>()
+                                    ,   {(uint32_t) n}
+                                    ,   encoder_sequence_lengths)}
+                    ,   {   "encoder_output"
+                        ,   input_tensors.at("encoder_outputs")},
+                        {   "step"
+                        ,   input_tensors.at("step")}}
+                );
+            TensorMap cross_attn_outputs = 
+                TensorMap(
+                    {   {   "hidden_features"
+                        ,   Tensor  (   MEMORY_GPU
+                                    ,   getTensorType<T>()
+                                    ,   {(uint32_t) n, config_.d_model}
+                                    ,   lno_buf)}
+                    ,   {   "key_cache"
+                        ,   Tensor  (   MEMORY_GPU
+                                    ,   getTensorType<T>()
+                                    ,   {(uint32_t) n, config_.decoder_attention_heads, size_per_head/x, config_.max_target_positions, x}
+                                    ,   output_tensors.at("cross_key_cache").getPtr<T>() + l * cross_cache_lda)}
+                    ,   {   "value_cache"
+                        ,   Tensor  (   MEMORY_GPU
+                                    ,   getTensorType<T>()
+                                    ,   {(uint32_t) n, config_.decoder_attention_heads, config_.max_target_positions, size_per_head}
+                                    ,   output_tensors.at("cross_value_cache").getPtr<T>() + l * cross_cache_lda)}}
+                );
+            cross_attn_.forward(&cross_attn_outputs, &cross_attn_inputs, &weight.layers[l].cross_attn);
+            sync_check_cuda_error();
             // std::cout << "validating cross_attn output: \n";
             // printMatrix(lno_buf, n, 10, config_.d_model, true);
             // std::cout << "key_cache: \n";
@@ -340,6 +380,11 @@ namespace fastertransformer
 
 
         }
+
+        // std::cout << "hidden units pre unembed: \n";
+        // printMatrix(lno_buf, batch * beam, 10, config_.d_model, true);
+        // while(std::cin.get() != '\n');
+
         cublas_wrapper_->Gemm(
             CUBLAS_OP_T,
             CUBLAS_OP_N,
