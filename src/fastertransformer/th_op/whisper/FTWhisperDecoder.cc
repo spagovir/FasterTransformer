@@ -3,12 +3,14 @@
 #include "src/fastertransformer/th_op/whisper/VectorReader.h"
 #include "src/fastertransformer/models/whisper/WhisperKernels.h"
 #include <ATen/core/TensorBody.h>
+#include <c10/util/intrusive_ptr.h>
 #include <torch/types.h>
 #include <vector>
 
 namespace torch_ext
 {
-    FTWhisperDecoder::FTWhisperDecoder(std::vector<th::Tensor> weights)
+    FTWhisperDecoder::FTWhisperDecoder(c10::intrusive_ptr<FTWhisperConfig> th_config, std::vector<th::Tensor> weights):
+    config(th_config->config)
     {
         /*
         weights:
@@ -168,6 +170,6 @@ namespace torch_ext
 
 static th::jit::class_<torch_ext::FTWhisperDecoder> ftWhisperDecoderTh 
 =   th::jit::class_<torch_ext::FTWhisperDecoder>("FasterTransformer", "FTWhisperDecoder")
-    .def(torch::jit::init<std::vector<th::Tensor>>())
+    .def(torch::jit::init<c10::intrusive_ptr<torch_ext::FTWhisperConfig>, std::vector<th::Tensor>>())
     .def("forward", &torch_ext::FTWhisperDecoder::forward)
 ;

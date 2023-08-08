@@ -1,19 +1,25 @@
+# %%
 from transformers import WhisperForConditionalGeneration
 import torch as th
 import einops as e
-
+from tokenizer import get_tokenizer
+# %%
 th.classes.load_library("/workspaces/FasterTransformer/build/lib/libth_transformer.so")
+
 
 class FTWhisperForConditionalGeneration(WhisperForConditionalGeneration):
     def __init__(self, *args, **kwargs):
-        super().__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
     
-    def cuda(self):
+    def cuda(self, batch, beam):
+        tokenizer = get_tokenizer(True)
+        if self.config._name_or_path[-3:] == ",en":
+            self.bot_sequence = [tokenizer.sot, tokenizer.no_timestamps]
+        config = self.convert_config(batch, beam)
         weights = [weight.to("cuda") for weight in [ self.base_model.encoder.conv1.weight
                 , self.base_model.encoder.conv1.bias
                 , self.base_model.encoder.conv2.weight
                 , self.base_model.encoder.conv2.bias]]
-        # %%
         for layer in self.base_model.encoder.layers:
             weights += \
             [   weight.to("cuda") for weight in 
@@ -33,15 +39,12 @@ class FTWhisperForConditionalGeneration(WhisperForConditionalGeneration):
             ,   layer.final_layer_norm.weight
             ,   layer.final_layer_norm.bias
             ]]
-        # %%
         weights += [ weight.to("cuda") for weight in 
             [   self.base_model.encoder.layer_norm.weight
             ,   self.base_model.encoder.layer_norm.bias]]
 
-        # %%
         th.cuda.set_device(0)
-        # %%
-        self.ft_encoder = th.classes.FasterTransformer.FTWhisperEncoder(weights)
+        self.ft_encoder = th.classes.FasterTransformer.FTWhisperEncoder(config, weights)
         
 
         decoder_weights = [
@@ -52,7 +55,6 @@ class FTWhisperForConditionalGeneration(WhisperForConditionalGeneration):
             ]
 
         ]
-        # %%
         for layer in self.base_model.decoder.layers:
             decoder_weights += \
                 [weight.to("cuda") for weight in 
@@ -93,18 +95,33 @@ class FTWhisperForConditionalGeneration(WhisperForConditionalGeneration):
                     layer.fc2.bias
                 ]]
         decoder_weights += [weight.to("cuda") for weight in [self.base_model.decoder.layer_norm.weight, self.base_model.decoder.layer_norm.bias]]
-        # %%
-        self.ft_decoder = th.classes.FasterTransformer.FTWhisperDecoder(decoder_weights)
+        self.ft_decoder = th.classes.FasterTransformer.FTWhisperDecoder(config, decoder_weights)
         
         self.built_model = True
     def generate(self, inputs, previous_ids = None, prefix = None, input_ids = None):
+        batch = inputs.shape[0]
         if not input_ids: 
-            input_ids = self.prepare_inputs(previous_ids, prefix)
+            input_ids,input_lengths = self.prepare_inputs(previous_ids, prefix, batch)
         encoder_hidden_states = self.encoder.forward(inputs)
-        return self.decoder.forward(encoder_hidden_states, input_ids, 0.0)
+        return self.decoder.forward(encoder_hidden_states, input_ids, input_lengths, 0.0)
     def prepare_inputs(self, previous_ids, prefix):
         # previous ids and prompt not supported.
-        forced_inputs = []
-        forced_inputs.append(self.config.bos_token_id)
-        forced_inputs.append()
+        return (th.tensor([self.bot_sequence], dtype = th.int32, device = 'cuda'), th.tensor([2]))
+    def convert_config(self, batch, beam):
+        return th.classes.FasterTransformer.FTWhisperConfig(
+            batch,
+            self.config.vocab_size + 1,
+            self.config.num_mel_bins,
+            self.config.encoder_layers,
+            self.config.encoder_attention_heads,
+            self.config.decoder_layers,
+            self.config.decoder_attention_heads,
+            self.config.decoder_ffn_dim,
+            self.config.encoder_ffn_dim,
+            self.config.max_source_positions * 2,
+            self.config.max_target_positions, 
+            self.config.d_model,
+            beam,
+            self.config.eos_token_id
+        )
         

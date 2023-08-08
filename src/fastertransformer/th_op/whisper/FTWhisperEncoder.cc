@@ -10,14 +10,14 @@
 
 namespace torch_ext 
 {
-    FTWhisperEncoder::FTWhisperEncoder(std::vector<th::Tensor> weights) 
-    {   context = 
+    FTWhisperEncoder::FTWhisperEncoder(c10::intrusive_ptr<FTWhisperConfig> th_config, std::vector<th::Tensor> weights)
+    {   ft::WhisperConfig config = th_config->config
+    ;   context = 
         new ft::WhisperCudaContext
         (   at::cuda::getCurrentCUDABlasHandle()
         ,   at::cuda::getCurrentCUDAStream()
         ,   new ft::Allocator<ft::AllocatorType::TH>()
         )
-    ;   ft::WhisperConfig config;
     ;   encoder = new ft::WhisperEncoder<float>
         (   context 
         ,   true
@@ -81,6 +81,6 @@ namespace torch_ext
 
 static th::jit::class_<torch_ext::FTWhisperEncoder> ftWhisperEncoderTh 
 =   th::jit::class_<torch_ext::FTWhisperEncoder>("FasterTransformer", "FTWhisperEncoder")
-    .def(torch::jit::init<std::vector<th::Tensor>>())
+    .def(torch::jit::init<c10::intrusive_ptr<torch_ext::FTWhisperConfig>, std::vector<th::Tensor>>())
     .def("forward", &torch_ext::FTWhisperEncoder::forward)
 ;
