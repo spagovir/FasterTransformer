@@ -372,12 +372,10 @@ void DynamicDecodeLayer<T>::forward(TensorMap* output_tensors, TensorMap* input_
 
             FT_CHECK_WITH_INFO(dynamic_decode_output_tensors.isExist("cum_log_probs"),
                                "cum_log_probs should be provided in beam search.");
-            std::cout << "about to beam_search\n";
             if (true || beam_width < 16
                 || (output_tensors->isExist("beam_hyps")
                     && input_tensors->getVal<float>("beam_search_diversity_rate", 0.0f) != 0.0f)) {
                 // only online_beamsearch_decode_ support beam_search_diversity_rate when beam_hyps is used
-                std::cout << "online beam search\n";
                 online_beamsearch_decode_->forward(&dynamic_decode_output_tensors, &dynamic_decode_input_tensors);
             }
             else {

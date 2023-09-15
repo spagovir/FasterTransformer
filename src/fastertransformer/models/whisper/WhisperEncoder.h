@@ -8,7 +8,6 @@
 namespace fastertransformer {
 template <typename T>
 class WhisperEncoder : public BaseLayer {
-    WhisperConfig config;
     public: 
     WhisperEncoder
         ( WhisperCudaContext        *context

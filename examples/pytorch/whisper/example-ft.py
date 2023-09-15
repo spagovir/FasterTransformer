@@ -74,12 +74,28 @@ weights += [ weight.to("cuda") for weight in
 # %%
 th.cuda.set_device(0)
 # %%
-ft_whisper = th.classes.FasterTransformer.FTWhisperEncoder(weights)
+ft_whisper_config = th.classes.FasterTransformer.FTWhisperConfig(
+    1,
+    51865,
+    80,
+    4,
+    6,
+    4,
+    6,
+    1536,
+    1536,
+    3000,
+    2048,
+    384,
+    5,
+    50256
+)
+ft_whisper = th.classes.FasterTransformer.FTWhisperEncoder(ft_whisper_config, weights)
 # %%
 input_features_r = e.rearrange(input_features, "b c s -> b s c").contiguous().to("cuda")
 
 # %%
-ret = ft_whisper.forward(input_features_r, th.tensor([3000]))
+ret = ft_whisper.forward(input_features_r)
 # %%
 import torch.nn as nn
 
@@ -149,7 +165,7 @@ for layer in model.base_model.decoder.layers:
          ]]
 decoder_weights += [weight.to("cuda") for weight in [model.base_model.decoder.layer_norm.weight, model.base_model.decoder.layer_norm.bias]]
 # %%
-ft_whisper_decoder = th.classes.FasterTransformer.FTWhisperDecoder(decoder_weights)
+ft_whisper_decoder = th.classes.FasterTransformer.FTWhisperDecoder(ft_whisper_config, decoder_weights)
 # %%
 # print(f"hf logits: {model.base_model.decoder.forward(encoder_hidden_states = hfret, input_ids = th.zeros((1,1), dtype = th.int32))[0]}")
 

@@ -23,13 +23,16 @@ from transformers.utils import (
 )
 
 
+
 _import_structure = {
     "configuration_whisper": ["WHISPER_PRETRAINED_CONFIG_ARCHIVE_MAP", "WhisperConfig", "WhisperOnnxConfig"],
     "feature_extraction_whisper": ["WhisperFeatureExtractor"],
     "processing_whisper": ["WhisperProcessor"],
     "tokenization_whisper": ["WhisperTokenizer"],
+    "ft_whisper" : ["FTWhisperForConditionalGeneration"]
 }
 
+from .ft_whisper import FTWhisperForConditionalGeneration
 try:
     if not is_tokenizers_available():
         raise OptionalDependencyNotAvailable()

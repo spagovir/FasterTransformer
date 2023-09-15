@@ -15,7 +15,7 @@ namespace torch_ext {
         ft::WhisperEncoderWeight<float> weight;
         public:
         FTWhisperEncoder(c10::intrusive_ptr<FTWhisperConfig> th_config, std::vector<th::Tensor> weights); // I'm lazy and only going to init for whisper tiny rn
-        th::Tensor forward(th::Tensor input_ids, th::Tensor input_lengths);
+        th::Tensor forward(th::Tensor input_ids); //, th::Tensor input_lengths);
         ~FTWhisperEncoder();
 
     };

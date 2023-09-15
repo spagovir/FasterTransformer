@@ -41,7 +41,7 @@ namespace fastertransformer
         ,   3
         ,   context_->cudnn_handle)
     ,   attn_block(
-        config,
+        config_,
         context,
         is_free_buffer_after_forward
         )
@@ -90,19 +90,19 @@ namespace fastertransformer
     ;   Tensor &out_tensor = output_tensors.at("encoder_output")
     ;   uint32_t batch = in_tensor.shape[0]
     ;   uint32_t seq = in_tensor.shape[1]
-    ;   FT_CHECK(config.num_mel_bins == in_tensor.shape[2])
+    ;   FT_CHECK(config_.num_mel_bins == in_tensor.shape[2])
     ;   if(!buffers_allocated_) allocateBuffer(batch,seq)
     ;   else
-        {   FT_CHECK(batch == config.batch_size)
-        ;   FT_CHECK(seq == config.max_source_positions)
+        {   FT_CHECK(batch == config_.batch_size)
+        ;   FT_CHECK(seq == config_.max_source_positions)
         ;   }
     ;   FT_CHECK(batch == out_tensor.shape[0])
     ;   FT_CHECK((seq+1)/2 == out_tensor.shape[1])
-    ;   FT_CHECK(config.d_model == out_tensor.shape[2])
+    ;   FT_CHECK(config_.d_model == out_tensor.shape[2])
     ;   Tensor conv1_out_tensor = Tensor
             (   MEMORY_GPU
             ,   getTensorType<T>()
-            ,   {batch, seq, config.d_model}
+            ,   {batch, seq, config_.d_model}
             ,   conv1_out_buffer)
     ;   conv1.forward
         (   in_tensor
@@ -111,7 +111,7 @@ namespace fastertransformer
     ;   Tensor conv2_out_tensor = Tensor
         (   MEMORY_GPU
         ,   getTensorType<T>()
-        ,   {batch, (seq+1)/2, config.d_model} //(seq+1)/2
+        ,   {batch, (seq+1)/2, config_.d_model} //(seq+1)/2
         ,   residual
         )
     ;   conv2.forward
@@ -128,7 +128,7 @@ namespace fastertransformer
         ,   conv2_out_tensor.sizeBytes()
         ,   cudaMemcpyDefault)
     */
-    ;   for(uint32_t i = 0; i < config.encoder_layers; i++) //config_.encoder_layers; i++)
+    ;   for(uint32_t i = 0; i < config_.encoder_layers; i++) //config_.encoder_layers; i++)
         {   attn_block.forward
             (   conv2_out_tensor
             ,   weight.layers[i]
@@ -148,7 +148,9 @@ namespace fastertransformer
     ;   }
     template<typename T> 
     std::vector<uint32_t> WhisperEncoder<T>::out_size(uint32_t batch, uint32_t seq)
-    {   return {batch, (seq+1)/2, config.d_model};} //(seq+1)/2
+    {   
+    ;   std::cout << config_.d_model << std::endl;
+    ;   return {batch, (seq+1)/2, config_.d_model};} //(seq+1)/2
 
     template<typename T>
     WhisperEncoder<T>::~WhisperEncoder()

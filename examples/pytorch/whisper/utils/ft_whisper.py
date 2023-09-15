@@ -1,8 +1,10 @@
+
 # %%
 from transformers import WhisperForConditionalGeneration
 import torch as th
 import einops as e
-from tokenizer import get_tokenizer
+from utils.tokenizer import Tokenizer
+from .tokenizer import get_encoding
 # %%
 th.classes.load_library("/workspaces/FasterTransformer/build/lib/libth_transformer.so")
 
@@ -12,8 +14,9 @@ class FTWhisperForConditionalGeneration(WhisperForConditionalGeneration):
         super().__init__(*args, **kwargs)
     
     def cuda(self, batch, beam):
-        tokenizer = get_tokenizer(True)
-        if self.config._name_or_path[-3:] == ",en":
+        tokenizer = Tokenizer(get_encoding('gpt2'))
+        tokenizer.language = 'en'
+        if self.config._name_or_path[-3:] == ".en":
             self.bot_sequence = [tokenizer.sot, tokenizer.no_timestamps]
         config = self.convert_config(batch, beam)
         weights = [weight.to("cuda") for weight in [ self.base_model.encoder.conv1.weight
@@ -44,6 +47,7 @@ class FTWhisperForConditionalGeneration(WhisperForConditionalGeneration):
             ,   self.base_model.encoder.layer_norm.bias]]
 
         th.cuda.set_device(0)
+        print(f"encoder weights lengths: {len(weights)}\n")
         self.ft_encoder = th.classes.FasterTransformer.FTWhisperEncoder(config, weights)
         
 
@@ -99,15 +103,34 @@ class FTWhisperForConditionalGeneration(WhisperForConditionalGeneration):
         
         self.built_model = True
     def generate(self, inputs, previous_ids = None, prefix = None, input_ids = None):
+        th.inference_mode()
         batch = inputs.shape[0]
+        input_features_r = e.rearrange(inputs, "b c s -> b s c").contiguous().to("cuda")
         if not input_ids: 
             input_ids,input_lengths = self.prepare_inputs(previous_ids, prefix, batch)
-        encoder_hidden_states = self.encoder.forward(inputs)
-        return self.decoder.forward(encoder_hidden_states, input_ids, input_lengths, 0.0)
-    def prepare_inputs(self, previous_ids, prefix):
+        encoder_hidden_states = self.ft_encoder.forward(input_features_r)
+        return self.ft_decoder.forward(encoder_hidden_states, input_ids, input_lengths, 0.0)
+    def prepare_inputs(self, previous_ids, prefix,batch):
         # previous ids and prompt not supported.
-        return (th.tensor([self.bot_sequence], dtype = th.int32, device = 'cuda'), th.tensor([2]))
+        return (e.repeat(th.tensor(self.bot_sequence, dtype = th.int32, device = 'cuda'), 's -> b s', b = batch), th.tensor([len(self.bot_sequence)]*batch, dtype=th.int32, device='cuda'))
     def convert_config(self, batch, beam):
+        return \
+            th.classes.FasterTransformer.FTWhisperConfig(
+                1,
+                51865,
+                80,
+                4,
+                6,
+                4,
+                6,
+                1536,
+                1536,
+                3000,
+                2048,
+                384,
+                5,
+                50256
+            )
         return th.classes.FasterTransformer.FTWhisperConfig(
             batch,
             self.config.vocab_size + 1,
