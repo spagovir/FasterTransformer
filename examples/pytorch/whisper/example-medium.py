@@ -12,13 +12,13 @@ from utils import WhisperForConditionalGeneration, WhisperDecoder
 from datasets import load_dataset
 from utils.tokenizer import Tokenizer, get_encoding
 
-processor = AutoProcessor.from_pretrained("openai/whisper-tiny.en")
+processor = AutoProcessor.from_pretrained("openai/whisper-medium.en")
 
 # %%
 from utils import FTWhisperForConditionalGeneration
 # %%
 
-model = FTWhisperForConditionalGeneration.from_pretrained("openai/whisper-tiny.en")
+model = FTWhisperForConditionalGeneration.from_pretrained("openai/whisper-medium.en")
 # %%
 model.cuda(1,5)
 # %%
@@ -42,7 +42,6 @@ diff = hfret - ret.to('cpu')
 print(f"encoder diff: {diff} \n")
 # %%
 generated_ids = model.generate(inputs=input_features)
-print(generated_ids)
 transcription = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
 print(f"Transcription:{transcription}")
 # %%

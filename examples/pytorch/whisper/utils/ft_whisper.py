@@ -19,12 +19,12 @@ class FTWhisperForConditionalGeneration(WhisperForConditionalGeneration):
         if self.config._name_or_path[-3:] == ".en":
             self.bot_sequence = [tokenizer.sot, tokenizer.no_timestamps]
         config = self.convert_config(batch, beam)
-        weights = [weight.to("cuda") for weight in [ self.base_model.encoder.conv1.weight
+        self.weights = [weight.to("cuda") for weight in [ self.base_model.encoder.conv1.weight
                 , self.base_model.encoder.conv1.bias
                 , self.base_model.encoder.conv2.weight
                 , self.base_model.encoder.conv2.bias]]
         for layer in self.base_model.encoder.layers:
-            weights += \
+            self.weights += \
             [   weight.to("cuda") for weight in 
             [   layer.self_attn.k_proj.weight.T.contiguous()  # * (384/6)**-0.25
             ,   layer.self_attn.v_proj.weight.T.contiguous()
@@ -42,16 +42,16 @@ class FTWhisperForConditionalGeneration(WhisperForConditionalGeneration):
             ,   layer.final_layer_norm.weight
             ,   layer.final_layer_norm.bias
             ]]
-        weights += [ weight.to("cuda") for weight in 
+        self.weights += [ weight.to("cuda") for weight in 
             [   self.base_model.encoder.layer_norm.weight
             ,   self.base_model.encoder.layer_norm.bias]]
 
+
         th.cuda.set_device(0)
-        print(f"encoder weights lengths: {len(weights)}\n")
-        self.ft_encoder = th.classes.FasterTransformer.FTWhisperEncoder(config, weights)
+        self.ft_encoder = th.classes.FasterTransformer.FTWhisperEncoder(config, self.weights)
         
 
-        decoder_weights = [
+        self.decoder_weights = [
             weight.to("cuda") for weight in
             [
                 self.base_model.decoder.embed_tokens.weight,
@@ -60,7 +60,7 @@ class FTWhisperForConditionalGeneration(WhisperForConditionalGeneration):
 
         ]
         for layer in self.base_model.decoder.layers:
-            decoder_weights += \
+            self.decoder_weights += \
                 [weight.to("cuda") for weight in 
                 [
                     layer.self_attn_layer_norm.weight,
@@ -98,8 +98,8 @@ class FTWhisperForConditionalGeneration(WhisperForConditionalGeneration):
                     layer.fc2.weight.T.contiguous(),
                     layer.fc2.bias
                 ]]
-        decoder_weights += [weight.to("cuda") for weight in [self.base_model.decoder.layer_norm.weight, self.base_model.decoder.layer_norm.bias]]
-        self.ft_decoder = th.classes.FasterTransformer.FTWhisperDecoder(config, decoder_weights)
+        self.decoder_weights += [weight.to("cuda") for weight in [self.base_model.decoder.layer_norm.weight, self.base_model.decoder.layer_norm.bias]]
+        self.ft_decoder = th.classes.FasterTransformer.FTWhisperDecoder(config, self.decoder_weights)
         
         self.built_model = True
     def generate(self, inputs, previous_ids = None, prefix = None, input_ids = None):
@@ -109,31 +109,32 @@ class FTWhisperForConditionalGeneration(WhisperForConditionalGeneration):
         if not input_ids: 
             input_ids,input_lengths = self.prepare_inputs(previous_ids, prefix, batch)
         encoder_hidden_states = self.ft_encoder.forward(input_features_r)
-        return self.ft_decoder.forward(encoder_hidden_states, input_ids, input_lengths, 0.0)
+        ret = self.ft_decoder.forward(encoder_hidden_states, input_ids, input_lengths, 0.0)
+        return ret
     def prepare_inputs(self, previous_ids, prefix,batch):
         # previous ids and prompt not supported.
         return (e.repeat(th.tensor(self.bot_sequence, dtype = th.int32, device = 'cuda'), 's -> b s', b = batch), th.tensor([len(self.bot_sequence)]*batch, dtype=th.int32, device='cuda'))
     def convert_config(self, batch, beam):
-        return \
-            th.classes.FasterTransformer.FTWhisperConfig(
-                1,
-                51865,
-                80,
-                4,
-                6,
-                4,
-                6,
-                1536,
-                1536,
-                3000,
-                2048,
-                384,
-                5,
-                50256
-            )
+        # return  \
+            # th.classes.FasterTransformer.FTWhisperConfig(
+                # 1,
+                # 51865,
+                # 80,
+                # 4,
+                # 6,
+                # 4,
+                # 6,
+                # 1536,
+                # 1536,
+                # 3000,
+                # 2048,
+                # 384,
+                # 5,
+                # 50256
+            # )
         return th.classes.FasterTransformer.FTWhisperConfig(
             batch,
-            self.config.vocab_size + 1,
+            self.config.vocab_size,
             self.config.num_mel_bins,
             self.config.encoder_layers,
             self.config.encoder_attention_heads,
@@ -141,7 +142,7 @@ class FTWhisperForConditionalGeneration(WhisperForConditionalGeneration):
             self.config.decoder_attention_heads,
             self.config.decoder_ffn_dim,
             self.config.encoder_ffn_dim,
-            self.config.max_source_positions * 2,
+            self.config.max_source_positions,
             self.config.max_target_positions, 
             self.config.d_model,
             beam,

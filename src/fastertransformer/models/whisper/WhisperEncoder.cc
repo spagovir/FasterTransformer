@@ -149,7 +149,6 @@ namespace fastertransformer
     template<typename T> 
     std::vector<uint32_t> WhisperEncoder<T>::out_size(uint32_t batch, uint32_t seq)
     {   
-    ;   std::cout << config_.d_model << std::endl;
     ;   return {batch, (seq+1)/2, config_.d_model};} //(seq+1)/2
 
     template<typename T>

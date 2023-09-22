@@ -36,15 +36,12 @@ namespace fastertransformer
         NOT_SUPPORTED "output_logprobs" : [batch, beam, max_target_positions, vocab_size]
     */
     {
-        std::cout << "entered decoder \n";
         uint32_t batch = input_tensors.at("encoder_outputs").shape[0];
         uint32_t seq = input_tensors.at("encoder_outputs").shape[1];
         uint32_t beam = input_tensors.isExist("beam_width")? input_tensors.at("beam_width").getPtr<uint32_t>()[0] : 1;
         uint32_t out_seq = output_tensors.at("output_ids").shape[1];
         uint32_t output_beams_lda = batch * beam;
         uint32_t max_input_length = input_tensors.at("decoder_inputs").shape[1];
-        std::cout << "inputs (" << max_input_length << "):\n";
-        print_to_screen(input_tensors.at("decoder_inputs").getPtr<int>(), 10);
         if(!is_buffers_allocated_) allocateBuffer(batch,beam, seq, out_seq);
         sync_check_cuda_error();
         // repeat encoder output for each beam
@@ -53,8 +50,6 @@ namespace fastertransformer
         // output_id_beams : seq x batch x beam
         // initialize output_id_beams from inputs:
         invokeCopyTransposeRepeat<uint32_t>(output_id_beams, input_tensors.at("decoder_inputs").getPtr<uint32_t>(), batch, max_input_length, beam, context_->stream_);
-        std::cout << "after copy transpose repeat: \n:";
-        printMatrix((int*) output_id_beams, 10, batch * beam, batch * beam, true);
         // while(std::cin.get() != '\n');
         // initialize buffers used in beam search
         invokeDecodingInitialize<float>(finished, sequence_lengths, nullptr, cumulative_log_probs, nullptr, batch, beam, 1, context_->stream_);
