@@ -5,8 +5,8 @@ from transformers import AutoProcessor
 from utils import WhisperForConditionalGeneration
 from datasets import load_dataset
 
-processor = AutoProcessor.from_pretrained("openai/whisper-tiny.en")
-model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-tiny.en")
+processor = AutoProcessor.from_pretrained("openai/whisper-tiny")
+model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-tiny")
 
 
 

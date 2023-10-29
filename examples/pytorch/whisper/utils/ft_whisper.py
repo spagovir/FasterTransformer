@@ -17,7 +17,9 @@ class FTWhisperForConditionalGeneration(WhisperForConditionalGeneration):
         tokenizer = Tokenizer(get_encoding('gpt2'))
         tokenizer.language = 'en'
         if self.config._name_or_path[-3:] == ".en":
-            self.bot_sequence = [tokenizer.sot, tokenizer.no_timestamps]
+            self.bot_sequence = tokenizer.sot_sequence_including_notimestamps
+        else:
+            self.bot_sequence = [50258, 50259, 50359, 50363]
         config = self.convert_config(batch, beam)
         self.weights = [weight.to("cuda") for weight in [ self.base_model.encoder.conv1.weight
                 , self.base_model.encoder.conv1.bias
